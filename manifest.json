@@ -1,0 +1,10 @@
+{
+  "id": "obsiclaud",
+  "name": "OBSICLAUD",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "AI-powered vault management assistant using Claude. Chat with Claude to create, edit, organize notes, manage tags, and analyze your entire vault.",
+  "author": "CRtheHILLS",
+  "authorUrl": "https://github.com/CRtheHILLS",
+  "isDesktopOnly": true
+}
