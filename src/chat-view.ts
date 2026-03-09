@@ -366,13 +366,22 @@ export class ChatView extends ItemView {
         this.addCopyButton(responseBody, result.text);
       }
 
-      // Save message
+      // Save message — strip large tool results to keep history small
+      const trimmedToolCalls = result.toolCalls.length > 0
+        ? result.toolCalls.map((tc) => ({
+            toolName: tc.toolName,
+            input: tc.input,
+            result: tc.result.length > 500
+              ? tc.result.slice(0, 500) + "...(trimmed)"
+              : tc.result,
+          }))
+        : undefined;
+
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: result.text,
         timestamp: Date.now(),
-        toolCalls:
-          result.toolCalls.length > 0 ? result.toolCalls : undefined,
+        toolCalls: trimmedToolCalls,
       };
       this.messages.push(assistantMsg);
     } catch (err) {
@@ -451,6 +460,7 @@ export class ChatView extends ItemView {
     (el as any)._interval = interval;
     (el as any)._label = label;
     (el as any)._details = detailsPanel;
+    (el as any)._actionCount = 0;
 
     this.scrollToBottom();
     return el;
@@ -458,7 +468,16 @@ export class ChatView extends ItemView {
 
   private updateProcessingLabel(procEl: HTMLElement, text: string): void {
     const label = (procEl as any)?._label as HTMLElement | undefined;
-    if (label) label.textContent = text + "...";
+    if (!label) return;
+    (procEl as any)._actionCount = ((procEl as any)._actionCount || 0) + 1;
+    const count = (procEl as any)._actionCount;
+    label.textContent = `${text}... (action ${count})`;
+    // Stop the phase cycling once tools are running
+    const interval = (procEl as any)?._interval;
+    if (interval) {
+      clearInterval(interval);
+      (procEl as any)._interval = null;
+    }
   }
 
   private addProcessingStep(
