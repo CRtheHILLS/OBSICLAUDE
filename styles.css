@@ -495,6 +495,7 @@
 .oc-input-area {
   flex-shrink: 0;
   padding: 8px 12px 12px;
+  position: relative;
 }
 
 .oc-input-row {
@@ -654,6 +655,87 @@
 
 .oc-copy-label {
   font-weight: 500;
+}
+
+/* Stop button */
+.oc-send-btn.is-stop {
+  background: #ef4444;
+  color: white;
+}
+
+.oc-send-btn.is-stop:hover {
+  background: #dc2626;
+  opacity: 1;
+}
+
+/* ============================================================
+   Slash Command Menu
+   ============================================================ */
+
+.oc-slash-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  animation: oc-slash-in 0.12s ease-out;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+@keyframes oc-slash-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.oc-slash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.oc-slash-item:hover,
+.oc-slash-item.is-active {
+  background: var(--background-secondary);
+}
+
+.oc-slash-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oc-slash-cmd {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--interactive-accent);
+  font-family: var(--font-monospace);
+  flex-shrink: 0;
+}
+
+.oc-slash-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.oc-slash-desc {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+  flex-shrink: 0;
 }
 
 /* Drag over highlight */

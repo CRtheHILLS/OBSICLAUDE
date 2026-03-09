@@ -60,6 +60,64 @@ const THINKING_PHASES = [
   "Brewing",
 ];
 
+interface SlashCommand {
+  command: string;
+  label: string;
+  description: string;
+  prompt: string;
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    command: "/explore",
+    label: "Explore vault",
+    description: "Show folder structure, tags, and recent notes",
+    prompt: "Explore my vault: show the folder structure, all tags, and recently modified notes.",
+  },
+  {
+    command: "/analyze",
+    label: "Analyze vault",
+    description: "Find orphans, missing links, and suggest improvements",
+    prompt: "Analyze my vault health: find orphan notes, missing backlinks, tag distribution, and suggest improvements.",
+  },
+  {
+    command: "/tags",
+    label: "Tag overview",
+    description: "Show all tags and their usage counts",
+    prompt: "Show me all tags in my vault with usage counts, sorted by frequency.",
+  },
+  {
+    command: "/orphans",
+    label: "Find orphan notes",
+    description: "Notes with no backlinks or outgoing links",
+    prompt: "Find all orphan notes in my vault — notes with no backlinks or outgoing links.",
+  },
+  {
+    command: "/recent",
+    label: "Recent notes",
+    description: "Show recently modified notes",
+    prompt: "Show my 20 most recently modified notes with their paths and modification dates.",
+  },
+  {
+    command: "/search",
+    label: "Search",
+    description: "Search notes by keyword",
+    prompt: "Search my vault for: ",
+  },
+  {
+    command: "/duplicates",
+    label: "Find duplicates",
+    description: "Notes with similar titles or content",
+    prompt: "Find potential duplicate notes in my vault based on similar titles.",
+  },
+  {
+    command: "/links",
+    label: "Link suggestions",
+    description: "Suggest links between related notes",
+    prompt: "Suggest useful links between related notes in my vault that are currently unlinked.",
+  },
+];
+
 export class ChatView extends ItemView {
   private chatContainer: HTMLElement;
   private inputContainer: HTMLElement;
@@ -72,6 +130,8 @@ export class ChatView extends ItemView {
   private claudeService: ClaudeService;
   private attachedContexts: AttachedContext[] = [];
   private capturedDraggable: any = null;
+  private abortController: AbortController | null = null;
+  private slashMenu: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: ClaudeAssistantPlugin) {
     super(leaf);
@@ -183,9 +243,34 @@ export class ChatView extends ItemView {
       this.inputEl.style.height = "auto";
       this.inputEl.style.height =
         Math.min(this.inputEl.scrollHeight, 120) + "px";
+      // Slash command menu
+      this.handleSlashInput();
     });
 
     this.inputEl.addEventListener("keydown", (e) => {
+      // ESC to stop processing
+      if (e.key === "Escape") {
+        if (this.isProcessing) {
+          e.preventDefault();
+          this.handleStop();
+          return;
+        }
+        if (this.slashMenu) {
+          this.dismissSlashMenu();
+          return;
+        }
+      }
+      // Arrow keys for slash menu
+      if (this.slashMenu && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        this.navigateSlashMenu(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (this.slashMenu && e.key === "Enter") {
+        e.preventDefault();
+        this.selectSlashItem();
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         this.handleSend();
@@ -197,7 +282,13 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Send" },
     });
     setIcon(this.sendBtn, "arrow-up");
-    this.sendBtn.addEventListener("click", () => this.handleSend());
+    this.sendBtn.addEventListener("click", () => {
+      if (this.isProcessing) {
+        this.handleStop();
+      } else {
+        this.handleSend();
+      }
+    });
   }
 
   async onClose(): Promise<void> {
@@ -235,12 +326,158 @@ export class ChatView extends ItemView {
   // CHAT LOGIC (Streaming + Processing Indicator)
   // ============================================================
 
+  private handleStop(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+      new Notice("Stopped");
+    }
+  }
+
+  // ============================================================
+  // SLASH COMMANDS
+  // ============================================================
+
+  private handleSlashInput(): void {
+    const val = this.inputEl.value;
+    if (!val.startsWith("/")) {
+      this.dismissSlashMenu();
+      return;
+    }
+
+    const query = val.toLowerCase();
+    const matches = SLASH_COMMANDS.filter(
+      (c) =>
+        c.command.startsWith(query) ||
+        c.label.toLowerCase().includes(query.slice(1))
+    );
+
+    if (matches.length === 0) {
+      this.dismissSlashMenu();
+      return;
+    }
+
+    this.showSlashMenu(matches);
+  }
+
+  private showSlashMenu(commands: SlashCommand[]): void {
+    this.dismissSlashMenu();
+
+    const menu = this.inputContainer.createDiv("oc-slash-menu");
+    this.slashMenu = menu;
+
+    for (let i = 0; i < commands.length; i++) {
+      const cmd = commands[i];
+      const item = menu.createDiv("oc-slash-item");
+      if (i === 0) item.addClass("is-active");
+      item.dataset.index = String(i);
+
+      const left = item.createDiv("oc-slash-item-left");
+      left.createSpan({ text: cmd.command, cls: "oc-slash-cmd" });
+      left.createSpan({ text: cmd.label, cls: "oc-slash-label" });
+
+      item.createSpan({ text: cmd.description, cls: "oc-slash-desc" });
+
+      item.addEventListener("click", () => {
+        this.applySlashCommand(cmd);
+      });
+      item.addEventListener("mouseenter", () => {
+        menu
+          .querySelectorAll(".oc-slash-item")
+          .forEach((el) => el.removeClass("is-active"));
+        item.addClass("is-active");
+      });
+    }
+  }
+
+  private navigateSlashMenu(direction: number): void {
+    if (!this.slashMenu) return;
+    const items = this.slashMenu.querySelectorAll(".oc-slash-item");
+    if (items.length === 0) return;
+
+    let active = -1;
+    items.forEach((el, i) => {
+      if (el.hasClass("is-active")) active = i;
+    });
+
+    items.forEach((el) => el.removeClass("is-active"));
+    const next = (active + direction + items.length) % items.length;
+    items[next].addClass("is-active");
+  }
+
+  private selectSlashItem(): void {
+    if (!this.slashMenu) return;
+    const active = this.slashMenu.querySelector(".oc-slash-item.is-active");
+    if (!active) return;
+
+    const idx = parseInt((active as HTMLElement).dataset.index || "0");
+    const commands = SLASH_COMMANDS.filter((c) => {
+      const query = this.inputEl.value.toLowerCase();
+      return (
+        c.command.startsWith(query) ||
+        c.label.toLowerCase().includes(query.slice(1))
+      );
+    });
+    if (commands[idx]) {
+      this.applySlashCommand(commands[idx]);
+    }
+  }
+
+  private applySlashCommand(cmd: SlashCommand): void {
+    this.dismissSlashMenu();
+    if (cmd.command === "/search") {
+      // For search, put the prompt and let user finish typing
+      this.inputEl.value = cmd.prompt;
+      this.inputEl.focus();
+      this.inputEl.setSelectionRange(
+        this.inputEl.value.length,
+        this.inputEl.value.length
+      );
+    } else {
+      this.inputEl.value = cmd.prompt;
+      this.handleSend();
+    }
+  }
+
+  private dismissSlashMenu(): void {
+    if (this.slashMenu) {
+      this.slashMenu.remove();
+      this.slashMenu = null;
+    }
+  }
+
+  // ============================================================
+  // SEND / FOLLOW-UP
+  // ============================================================
+
+  private pendingFollowUp: string | null = null;
+
   private async handleSend(): Promise<void> {
     const text = this.inputEl.value.trim();
-    if (!text || this.isProcessing) return;
+    if (!text) return;
+
+    // If processing, queue as follow-up
+    if (this.isProcessing) {
+      this.pendingFollowUp = text;
+      this.inputEl.value = "";
+      this.inputEl.style.height = "auto";
+
+      // Show queued message immediately in chat
+      const queuedMsg: ChatMessage = {
+        role: "user",
+        content: text,
+        timestamp: Date.now(),
+      };
+      this.messages.push(queuedMsg);
+      await this.renderMessage(queuedMsg);
+      this.scrollToBottom();
+      new Notice("Follow-up queued");
+      return;
+    }
 
     this.inputEl.value = "";
     this.inputEl.style.height = "auto";
+    this.abortController = new AbortController();
     this.setProcessing(true);
 
     // Remove welcome if present
@@ -291,6 +528,7 @@ export class ChatView extends ItemView {
       }));
 
       const result = await this.claudeService.chat(claudeMessages, {
+        signal: this.abortController?.signal,
         onText: (text: string) => {
           // Debounced markdown rendering during streaming
           if (renderTimeout) clearTimeout(renderTimeout);
@@ -415,6 +653,14 @@ export class ChatView extends ItemView {
     this.scrollToBottom();
     this.plugin.settings.chatHistory = this.messages;
     await this.plugin.saveSettings();
+
+    // Process queued follow-up
+    if (this.pendingFollowUp) {
+      const followUp = this.pendingFollowUp;
+      this.pendingFollowUp = null;
+      this.inputEl.value = followUp;
+      await this.handleSend();
+    }
   }
 
   // ============================================================
@@ -953,8 +1199,22 @@ export class ChatView extends ItemView {
 
   private setProcessing(processing: boolean): void {
     this.isProcessing = processing;
-    this.sendBtn.toggleClass("is-loading", processing);
-    this.inputEl.disabled = processing;
+    // Toggle send/stop icon
+    this.sendBtn.empty();
+    if (processing) {
+      setIcon(this.sendBtn, "square");
+      this.sendBtn.addClass("is-stop");
+      this.sendBtn.removeClass("is-loading");
+      this.sendBtn.ariaLabel = "Stop";
+    } else {
+      setIcon(this.sendBtn, "arrow-up");
+      this.sendBtn.removeClass("is-stop");
+      this.sendBtn.ariaLabel = "Send";
+      this.abortController = null;
+    }
+    // Keep input enabled so user can type follow-up
+    this.inputEl.disabled = false;
+    this.inputEl.placeholder = processing ? "Type follow-up or press Esc to stop..." : "Message...";
   }
 
   private scrollToBottom(): void {

@@ -28,6 +28,7 @@ export interface ChatCallbacks {
   onText?: (fullText: string) => void;
   onToolStart?: (toolName: string) => void;
   onToolEnd?: (toolCall: ToolCallInfo) => void;
+  signal?: AbortSignal;
 }
 
 export class ClaudeService {
@@ -94,13 +95,19 @@ ${this.settings.excludedFolders.join(", ")}`;
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
 
+      // Check for abort
+      if (callbacks?.signal?.aborted) {
+        fullText += "\n\n*(Stopped by user)*";
+        break;
+      }
+
       // Try streaming first, fall back to non-streaming
       let response: ClaudeResponse;
       try {
         response = await this.callAPIStream(messages, tools, (delta) => {
           fullText += delta;
           callbacks?.onText?.(fullText);
-        });
+        }, callbacks?.signal);
       } catch (streamErr) {
         // Fallback to non-streaming if fetch/streaming fails
         response = await this.callAPI(messages, tools);
@@ -134,6 +141,7 @@ ${this.settings.excludedFolders.join(", ")}`;
       const toolResults: ClaudeToolResultBlock[] = [];
 
       for (const toolUse of toolUseBlocks) {
+        if (callbacks?.signal?.aborted) break;
         callbacks?.onToolStart?.(toolUse.name);
 
         let result = await this.vaultTools.executeTool(
@@ -178,7 +186,8 @@ ${this.settings.excludedFolders.join(", ")}`;
   private async callAPIStream(
     messages: ClaudeMessage[],
     tools: ClaudeTool[],
-    onTextDelta: (text: string) => void
+    onTextDelta: (text: string) => void,
+    signal?: AbortSignal
   ): Promise<ClaudeResponse> {
     const body: ClaudeRequest = {
       model: this.settings.model,
@@ -198,6 +207,7 @@ ${this.settings.excludedFolders.join(", ")}`;
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!resp.ok) {
