@@ -122,13 +122,19 @@ export class ChatView extends ItemView {
     this.chatContainer = container.createDiv("oc-messages");
 
     // Restore chat history or show welcome
-    if (this.plugin.settings.chatHistory.length > 0) {
+    // Auto-clear if history is too large (prevents token overflow)
+    const historySize = JSON.stringify(this.plugin.settings.chatHistory).length;
+    if (this.plugin.settings.chatHistory.length > 0 && historySize < 500_000) {
       this.messages = [...this.plugin.settings.chatHistory];
       for (const msg of this.messages) {
         await this.renderMessage(msg);
       }
       this.scrollToBottom();
     } else {
+      if (historySize >= 500_000) {
+        this.plugin.settings.chatHistory = [];
+        await this.plugin.saveSettings();
+      }
       this.showWelcome();
     }
 

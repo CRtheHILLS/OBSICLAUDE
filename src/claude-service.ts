@@ -20,6 +20,9 @@ import { VaultTools } from "./vault-tools";
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
 const MAX_TOOL_ITERATIONS = 15;
+const MAX_TOOL_RESULT_CHARS = 80_000; // ~20k tokens per tool result
+const MAX_MSG_CHARS = 120_000; // ~30k tokens per single message
+const MAX_TOTAL_CHARS = 300_000; // ~75k tokens total conversation
 
 export interface ChatCallbacks {
   onText?: (fullText: string) => void;
@@ -133,10 +136,16 @@ ${this.settings.excludedFolders.join(", ")}`;
       for (const toolUse of toolUseBlocks) {
         callbacks?.onToolStart?.(toolUse.name);
 
-        const result = await this.vaultTools.executeTool(
+        let result = await this.vaultTools.executeTool(
           toolUse.name,
           toolUse.input as Record<string, unknown>
         );
+
+        // Truncate large tool results to prevent token overflow
+        if (result.length > MAX_TOOL_RESULT_CHARS) {
+          result = result.slice(0, MAX_TOOL_RESULT_CHARS) +
+            "\n\n...(truncated — result too large, showing first portion)";
+        }
 
         const tc: ToolCallInfo = {
           toolName: toolUse.name,
@@ -338,12 +347,10 @@ ${this.settings.excludedFolders.join(", ")}`;
   }
 
   /**
-   * Trim conversation messages to stay within token limits.
-   * Rough estimate: 1 token ~ 4 chars. Keep under ~150k tokens to leave room.
+   * Trim conversation to stay within token limits.
+   * Also truncates individual messages that are too large.
    */
   private trimMessages(messages: ClaudeMessage[]): ClaudeMessage[] {
-    const MAX_CHARS = 500_000; // ~125k tokens, safe margin under 200k limit
-
     const estimateChars = (msg: ClaudeMessage): number => {
       if (typeof msg.content === "string") return msg.content.length;
       if (Array.isArray(msg.content)) {
@@ -357,18 +364,41 @@ ${this.settings.excludedFolders.join(", ")}`;
       return 200;
     };
 
-    // Always keep the last (most recent) user message
+    // Step 1: Truncate individual messages that are too long
+    const truncated: ClaudeMessage[] = messages.map((msg) => {
+      if (typeof msg.content === "string" && msg.content.length > MAX_MSG_CHARS) {
+        return {
+          ...msg,
+          content: msg.content.slice(0, MAX_MSG_CHARS) + "\n...(truncated)",
+        };
+      }
+      // Truncate tool_result blocks inside array content
+      if (Array.isArray(msg.content)) {
+        const newContent = msg.content.map((block) => {
+          if (block.type === "tool_result") {
+            const tb = block as ClaudeToolResultBlock;
+            if (tb.content && tb.content.length > MAX_TOOL_RESULT_CHARS) {
+              return { ...tb, content: tb.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n...(truncated)" };
+            }
+          }
+          return block;
+        });
+        return { ...msg, content: newContent };
+      }
+      return msg;
+    });
+
+    // Step 2: Keep only recent messages that fit in budget
     let totalChars = 0;
     const result: ClaudeMessage[] = [];
 
-    // Walk from newest to oldest, always keep the last message
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const chars = estimateChars(messages[i]);
-      if (totalChars + chars > MAX_CHARS && result.length > 0) {
-        break; // Stop adding older messages
+    for (let i = truncated.length - 1; i >= 0; i--) {
+      const chars = estimateChars(truncated[i]);
+      if (totalChars + chars > MAX_TOTAL_CHARS && result.length > 0) {
+        break;
       }
       totalChars += chars;
-      result.unshift(messages[i]);
+      result.unshift(truncated[i]);
     }
 
     // Ensure conversation starts with a user message
