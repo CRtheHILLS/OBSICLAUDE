@@ -14,7 +14,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "OBSICLAUD Settings" });
+    containerEl.createEl("h2", { text: "OBSICLAUDE Settings" });
 
     // ---- API Configuration ----
     containerEl.createEl("h3", { text: "API Configuration" });
@@ -70,7 +70,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Language")
-      .setDesc("Language for Claude's responses")
+      .setDesc("Language for the Help guide and UI. Claude automatically responds in the language you write in.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("en", "English")
@@ -78,6 +78,8 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
           .addOption("ja", "日本語")
           .addOption("de", "Deutsch")
           .addOption("zh", "中文")
+          .addOption("es", "Español")
+          .addOption("fr", "Français")
           .setValue(this.plugin.settings.language)
           .onChange(async (value) => {
             this.plugin.settings.language = value as typeof this.plugin.settings.language;

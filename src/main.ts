@@ -1,5 +1,5 @@
 // ============================================================
-// OBSICLAUD - Plugin Entry Point
+// OBSICLAUDE - Plugin Entry Point
 // ============================================================
 
 import { Plugin, Notice, Editor, MarkdownView, TFile, TFolder, Menu } from "obsidian";
@@ -17,25 +17,25 @@ export default class ClaudeAssistantPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.vaultTools = new VaultTools(this.app);
+    this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
-    this.addRibbonIcon("sparkles", "Open OBSICLAUD", () => {
+    this.addRibbonIcon("sparkles", "Open OBSICLAUDE", () => {
       this.activateChatView();
     });
 
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
 
-    // ---- File/Folder context menu: "Send to OBSICLAUD" ----
+    // ---- File/Folder context menu: "Send to OBSICLAUDE" ----
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu: Menu, file) => {
         if (file instanceof TFile) {
           menu.addItem((item) => {
             item
-              .setTitle("Send to OBSICLAUD")
+              .setTitle("Send to OBSICLAUDE")
               .setIcon("bot")
               .onClick(async () => {
                 await this.activateChatView();
@@ -46,7 +46,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         } else if (file instanceof TFolder) {
           menu.addItem((item) => {
             item
-              .setTitle("Send to OBSICLAUD")
+              .setTitle("Send to OBSICLAUDE")
               .setIcon("bot")
               .onClick(async () => {
                 await this.activateChatView();
@@ -62,13 +62,13 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
     this.addCommand({
       id: "open-chat",
-      name: "Open OBSICLAUD Chat",
+      name: "Open OBSICLAUDE Chat",
       callback: () => this.activateChatView(),
     });
 
     this.addCommand({
       id: "send-active-note",
-      name: "Send active note to OBSICLAUD",
+      name: "Send active note to OBSICLAUDE",
       editorCallback: async (_editor: Editor, view: MarkdownView) => {
         if (!view.file) return;
         await this.activateChatView();
@@ -143,7 +143,13 @@ export default class ClaudeAssistantPlugin extends Plugin {
     });
   }
 
-  onunload(): void {}
+  onunload(): void {
+    // Abort any in-flight API requests
+    const view = this.getChatView();
+    if (view) {
+      // onClose handles cleanup
+    }
+  }
 
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

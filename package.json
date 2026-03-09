@@ -1,7 +1,7 @@
 {
-  "name": "obsiclaud",
+  "name": "obsiclaude",
   "version": "1.0.0",
-  "description": "AI-powered vault management assistant using Claude API for Obsidian",
+  "description": "AI-powered vault assistant using Claude for Obsidian",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -10,10 +10,12 @@
   },
   "keywords": [
     "obsidian",
+    "obsidian-plugin",
     "claude",
     "ai",
     "assistant",
-    "vault-management"
+    "vault-management",
+    "knowledge-management"
   ],
   "author": "CRtheHILLS",
   "license": "MIT",

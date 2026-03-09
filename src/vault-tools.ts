@@ -4,10 +4,58 @@
 // ============================================================
 
 import { App, TFile, TFolder, normalizePath, Notice } from "obsidian";
-import { ClaudeTool, VaultAnalysis } from "./types";
+import { ClaudeTool, ClaudeAssistantSettings, VaultAnalysis } from "./types";
 
 export class VaultTools {
-  constructor(private app: App) {}
+  constructor(
+    private app: App,
+    private getSettings: () => ClaudeAssistantSettings
+  ) {}
+
+  /**
+   * Check if a path is inside an excluded folder.
+   * Enforced server-side — Claude cannot bypass this.
+   */
+  private isExcludedPath(path: string): boolean {
+    const normalized = normalizePath(path);
+    const excluded = this.getSettings().excludedFolders;
+    return excluded.some(
+      (folder) =>
+        normalized === folder ||
+        normalized.startsWith(folder + "/")
+    );
+  }
+
+  /**
+   * Validate that a path doesn't escape the vault via traversal.
+   */
+  private isUnsafePath(path: string): boolean {
+    const normalized = normalizePath(path);
+    return (
+      normalized.startsWith("../") ||
+      normalized.includes("/../") ||
+      normalized === ".."
+    );
+  }
+
+  /**
+   * Guard for write operations: excluded folder + path traversal.
+   * Returns error string if blocked, null if safe.
+   */
+  private guardPath(path: string): string | null {
+    if (!path || typeof path !== "string") {
+      return JSON.stringify({ error: "Path is required and must be a string" });
+    }
+    if (this.isUnsafePath(path)) {
+      return JSON.stringify({ error: `Unsafe path rejected: ${path}` });
+    }
+    if (this.isExcludedPath(path)) {
+      return JSON.stringify({
+        error: `Path is in an excluded folder: ${path}. Excluded folders: ${this.getSettings().excludedFolders.join(", ")}`,
+      });
+    }
+    return null;
+  }
 
   // ============================================================
   // TOOL DEFINITIONS - Sent to Claude API
@@ -359,75 +407,76 @@ export class VaultTools {
     input: Record<string, unknown>
   ): Promise<string> {
     try {
+      // Input validation helpers
+      const str = (key: string): string => {
+        const v = input[key];
+        if (typeof v !== "string" || !v.trim())
+          throw new Error(`Missing required parameter: ${key}`);
+        return v.trim();
+      };
+      const optStr = (key: string): string | undefined => {
+        const v = input[key];
+        return typeof v === "string" ? v.trim() : undefined;
+      };
+      const optNum = (key: string): number | undefined => {
+        const v = input[key];
+        return typeof v === "number" ? v : undefined;
+      };
+      const optBool = (key: string): boolean | undefined => {
+        const v = input[key];
+        return typeof v === "boolean" ? v : undefined;
+      };
+      const obj = (key: string): Record<string, unknown> => {
+        const v = input[key];
+        if (!v || typeof v !== "object" || Array.isArray(v))
+          throw new Error(`Missing required parameter: ${key} (must be object)`);
+        return v as Record<string, unknown>;
+      };
+      const optObj = (key: string): Record<string, unknown> | undefined => {
+        const v = input[key];
+        if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+        return v as Record<string, unknown>;
+      };
+
       switch (name) {
         case "create_note":
-          return await this.createNote(
-            input.path as string,
-            input.content as string,
-            input.frontmatter as Record<string, unknown> | undefined
-          );
+          return await this.createNote(str("path"), str("content"), optObj("frontmatter"));
         case "read_note":
-          return await this.readNote(input.path as string);
+          return await this.readNote(str("path"));
         case "edit_note":
-          return await this.editNote(
-            input.path as string,
-            input.mode as string,
-            input.content as string | undefined,
-            input.find as string | undefined,
-            input.replace as string | undefined
-          );
+          return await this.editNote(str("path"), str("mode"), optStr("content"), optStr("find"), optStr("replace"));
         case "delete_note":
-          return await this.deleteNote(input.path as string);
+          return await this.deleteNote(str("path"));
         case "move_note":
-          return await this.moveNote(
-            input.from as string,
-            input.to as string
-          );
+          return await this.moveNote(str("from"), str("to"));
         case "list_files":
-          return await this.listFiles(
-            input.folder as string | undefined,
-            input.extension as string | undefined,
-            input.recursive as boolean | undefined
-          );
+          return await this.listFiles(optStr("folder"), optStr("extension"), optBool("recursive"));
         case "create_folder":
-          return await this.createFolder(input.path as string);
+          return await this.createFolder(str("path"));
         case "search_notes":
-          return await this.searchNotes(
-            input.query as string,
-            input.searchIn as string | undefined,
-            input.limit as number | undefined
-          );
+          return await this.searchNotes(str("query"), optStr("searchIn"), optNum("limit"));
         case "get_frontmatter":
-          return await this.getFrontmatter(input.path as string);
+          return await this.getFrontmatter(str("path"));
         case "set_frontmatter":
-          return await this.setFrontmatter(
-            input.path as string,
-            input.fields as Record<string, unknown>
-          );
+          return await this.setFrontmatter(str("path"), obj("fields"));
         case "get_backlinks":
-          return await this.getBacklinks(input.path as string);
+          return await this.getBacklinks(str("path"));
         case "get_outgoing_links":
-          return await this.getOutgoingLinks(input.path as string);
+          return await this.getOutgoingLinks(str("path"));
         case "analyze_vault":
           return await this.analyzeVault();
         case "find_orphan_notes":
           return await this.findOrphanNotes();
         case "suggest_links":
-          return await this.suggestLinks(input.path as string);
+          return await this.suggestLinks(str("path"));
         case "batch_frontmatter":
-          return await this.batchFrontmatter(
-            input.folder as string,
-            input.fields as Record<string, unknown>,
-            input.filter_tag as string | undefined
-          );
+          return await this.batchFrontmatter(str("folder"), obj("fields"), optStr("filter_tag"));
         case "find_duplicate_notes":
-          return await this.findDuplicateNotes(
-            input.threshold as number | undefined
-          );
+          return await this.findDuplicateNotes(optNum("threshold"));
         case "get_active_note":
           return this.getActiveNote();
         case "open_note":
-          return await this.openNote(input.path as string);
+          return await this.openNote(str("path"));
         case "get_all_tags":
           return await this.getAllTags();
         default:
@@ -448,6 +497,9 @@ export class VaultTools {
     content: string,
     frontmatter?: Record<string, unknown>
   ): Promise<string> {
+    const blocked = this.guardPath(path);
+    if (blocked) return blocked;
+
     const normalizedPath = normalizePath(path);
     const existing = this.app.vault.getAbstractFileByPath(normalizedPath);
     if (existing) {
@@ -499,6 +551,9 @@ export class VaultTools {
     find?: string,
     replace?: string
   ): Promise<string> {
+    const blocked = this.guardPath(path);
+    if (blocked) return blocked;
+
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
@@ -532,6 +587,9 @@ export class VaultTools {
   }
 
   private async deleteNote(path: string): Promise<string> {
+    const blocked = this.guardPath(path);
+    if (blocked) return blocked;
+
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
     await this.app.vault.trash(file, true);
@@ -540,6 +598,11 @@ export class VaultTools {
   }
 
   private async moveNote(from: string, to: string): Promise<string> {
+    const blockedFrom = this.guardPath(from);
+    if (blockedFrom) return blockedFrom;
+    const blockedTo = this.guardPath(to);
+    if (blockedTo) return blockedTo;
+
     const file = this.getFile(from);
     if (!file) return JSON.stringify({ error: `File not found: ${from}` });
 
@@ -591,6 +654,9 @@ export class VaultTools {
   }
 
   private async createFolder(path: string): Promise<string> {
+    const blocked = this.guardPath(path);
+    if (blocked) return blocked;
+
     await this.ensureFolder(normalizePath(path));
     new Notice(`Created folder: ${path}`);
     return JSON.stringify({ success: true, path });
@@ -686,6 +752,9 @@ export class VaultTools {
     path: string,
     fields: Record<string, unknown>
   ): Promise<string> {
+    const blocked = this.guardPath(path);
+    if (blocked) return blocked;
+
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
@@ -865,6 +934,7 @@ export class VaultTools {
     const mdFiles = this.app.vault.getMarkdownFiles();
     const targetFiles = mdFiles.filter((f) => {
       if (folder !== "/" && !f.path.startsWith(folder)) return false;
+      if (this.isExcludedPath(f.path)) return false;
       if (filterTag) {
         const cache = this.app.metadataCache.getFileCache(f);
         const tags = cache?.tags?.map((t) => t.tag) || [];

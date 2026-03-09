@@ -38,15 +38,7 @@ export class ClaudeService {
   ) {}
 
   private buildSystemPrompt(): string {
-    const langMap: Record<string, string> = {
-      en: "Respond in English.",
-      ko: "한국어로 답변하세요.",
-      ja: "日本語で回答してください。",
-      de: "Antworte auf Deutsch.",
-      zh: "请用中文回答。",
-    };
-
-    const langInstruction = langMap[this.settings.language] || langMap.en;
+    const langInstruction = "Respond in the same language the user writes in. If the user writes in Korean, respond in Korean. If they write in English, respond in English. Match the user's language naturally.";
 
     const base = `You are an AI assistant integrated into Obsidian, a knowledge management app. You help users manage their vault (notes, folders, tags, links) using the available tools.
 
@@ -81,7 +73,7 @@ ${this.settings.excludedFolders.join(", ")}`;
   ): Promise<{ text: string; toolCalls: ToolCallInfo[] }> {
     if (!this.settings.apiKey) {
       throw new Error(
-        "API key not configured. Go to Settings → OBSICLAUD to set your API key."
+        "API key not configured. Go to Settings → OBSICLAUDE to set your API key."
       );
     }
 

@@ -13,9 +13,10 @@ import {
 } from "obsidian";
 import { ChatMessage, ClaudeMessage, ToolCallInfo } from "./types";
 import { ClaudeService } from "./claude-service";
+import { getHelpContent } from "./help-guide";
 import type ClaudeAssistantPlugin from "./main";
 
-export const CHAT_VIEW_TYPE = "obsiclaud-chat";
+export const CHAT_VIEW_TYPE = "obsiclaude-chat";
 
 interface AttachedContext {
   type: "file" | "folder";
@@ -116,6 +117,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
     description: "Suggest links between related notes",
     prompt: "Suggest useful links between related notes in my vault that are currently unlinked.",
   },
+  {
+    command: "/help",
+    label: "Help",
+    description: "Open the user guide",
+    prompt: "__HELP__",
+  },
 ];
 
 export class ChatView extends ItemView {
@@ -143,7 +150,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "OBSICLAUD";
+    return "OBSICLAUDE";
   }
 
   getIcon(): string {
@@ -158,7 +165,7 @@ export class ChatView extends ItemView {
     // Header
     const header = container.createDiv("oc-header");
     const titleRow = header.createDiv("oc-header-row");
-    titleRow.createEl("span", { text: "OBSICLAUD", cls: "oc-title" });
+    titleRow.createEl("span", { text: "OBSICLAUDE", cls: "oc-title" });
 
     const actions = titleRow.createDiv("oc-header-actions");
 
@@ -169,6 +176,14 @@ export class ChatView extends ItemView {
     });
     this.modelBtn.setText(this.getModelShortName());
     this.modelBtn.addEventListener("click", (e) => this.showModelMenu(e));
+
+    // Help button
+    const helpBtn = actions.createEl("button", {
+      cls: "oc-icon-btn",
+      attr: { "aria-label": "Help" },
+    });
+    setIcon(helpBtn, "help-circle");
+    helpBtn.addEventListener("click", () => this.showHelp());
 
     // New chat button
     const clearBtn = actions.createEl("button", {
@@ -292,8 +307,17 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    this.plugin.settings.chatHistory = this.messages;
-    await this.plugin.saveSettings();
+    // Abort any in-flight requests
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+    if (this.activeProcessingEl) {
+      const interval = (this.activeProcessingEl as any)?._interval;
+      if (interval) clearInterval(interval);
+      this.activeProcessingEl = null;
+    }
+    await this.saveHistory();
   }
 
   // ============================================================
@@ -326,10 +350,19 @@ export class ChatView extends ItemView {
   // CHAT LOGIC (Streaming + Processing Indicator)
   // ============================================================
 
+  private activeProcessingEl: HTMLElement | null = null;
+
   private handleStop(): void {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
+      // Clean up processing indicator interval to prevent memory leak
+      if (this.activeProcessingEl) {
+        const interval = (this.activeProcessingEl as any)?._interval;
+        if (interval) clearInterval(interval);
+        this.activeProcessingEl = null;
+      }
+      this.pendingFollowUps = [];
       new Notice("Stopped");
     }
   }
@@ -425,6 +458,11 @@ export class ChatView extends ItemView {
 
   private applySlashCommand(cmd: SlashCommand): void {
     this.dismissSlashMenu();
+    if (cmd.prompt === "__HELP__") {
+      this.showHelp();
+      this.inputEl.value = "";
+      return;
+    }
     if (cmd.command === "/search") {
       // For search, put the prompt and let user finish typing
       this.inputEl.value = cmd.prompt;
@@ -450,15 +488,18 @@ export class ChatView extends ItemView {
   // SEND / FOLLOW-UP
   // ============================================================
 
-  private pendingFollowUp: string | null = null;
+  private pendingFollowUps: string[] = [];
 
   private async handleSend(): Promise<void> {
     const text = this.inputEl.value.trim();
     if (!text) return;
 
-    // If processing, queue as follow-up
+    // Dismiss slash menu if open
+    this.dismissSlashMenu();
+
+    // If processing, queue as follow-up (supports multiple)
     if (this.isProcessing) {
-      this.pendingFollowUp = text;
+      this.pendingFollowUps.push(text);
       this.inputEl.value = "";
       this.inputEl.style.height = "auto";
 
@@ -514,6 +555,7 @@ export class ChatView extends ItemView {
 
     // Processing indicator
     const procEl = this.createProcessingIndicator(responseBody);
+    this.activeProcessingEl = procEl;
 
     // Streaming content area
     const contentEl = responseBody.createDiv("oc-msg-content");
@@ -648,16 +690,15 @@ export class ChatView extends ItemView {
     // Cleanup processing indicator interval
     const interval = (procEl as any)?._interval;
     if (interval) clearInterval(interval);
+    this.activeProcessingEl = null;
 
     this.setProcessing(false);
     this.scrollToBottom();
-    this.plugin.settings.chatHistory = this.messages;
-    await this.plugin.saveSettings();
+    await this.saveHistory();
 
-    // Process queued follow-up
-    if (this.pendingFollowUp) {
-      const followUp = this.pendingFollowUp;
-      this.pendingFollowUp = null;
+    // Process queued follow-ups (FIFO)
+    if (this.pendingFollowUps.length > 0) {
+      const followUp = this.pendingFollowUps.shift()!;
       this.inputEl.value = followUp;
       await this.handleSend();
     }
@@ -886,7 +927,7 @@ export class ChatView extends ItemView {
     // Logo
     const logo = w.createDiv("oc-logo");
     logo.createEl("span", { text: "OBSI", cls: "oc-logo-a" });
-    logo.createEl("span", { text: "CLAUD", cls: "oc-logo-b" });
+    logo.createEl("span", { text: "CLAUDE", cls: "oc-logo-b" });
 
     // Drag & drop hero message
     const heroMsg = w.createDiv("oc-hero-msg");
@@ -1037,7 +1078,7 @@ export class ChatView extends ItemView {
 
     if (!resolved) {
       new Notice(
-        "Could not identify items. Try right-click → Send to OBSICLAUD."
+        "Could not identify items. Try right-click → Send to OBSICLAUDE."
       );
     }
   }
@@ -1183,12 +1224,95 @@ export class ChatView extends ItemView {
   }
 
   // ============================================================
+  // HELP GUIDE
+  // ============================================================
+
+  private async showHelp(): Promise<void> {
+    // Remove welcome if present
+    const welcome = this.chatContainer.querySelector(".oc-welcome");
+    if (welcome) welcome.remove();
+
+    // Remove existing help page if shown
+    const existing = this.chatContainer.querySelector(".oc-help");
+    if (existing) {
+      existing.remove();
+      return; // Toggle off
+    }
+
+    const lang = this.plugin.settings.language as "en" | "ko" | "ja" | "zh" | "es" | "de" | "fr";
+    const help = getHelpContent(lang);
+
+    const helpEl = this.chatContainer.createDiv("oc-help");
+
+    // Back button
+    const backRow = helpEl.createDiv("oc-help-back");
+    const backBtn = backRow.createEl("button", {
+      cls: "oc-help-back-btn",
+      attr: { "aria-label": "Close help" },
+    });
+    setIcon(backBtn, "arrow-left");
+    backBtn.createSpan({ text: " Back to chat" });
+    backBtn.addEventListener("click", () => {
+      helpEl.remove();
+    });
+
+    // Title
+    helpEl.createEl("h2", { text: help.title, cls: "oc-help-title" });
+
+    // Sections
+    for (const section of help.sections) {
+      const sectionEl = helpEl.createDiv("oc-help-section");
+      sectionEl.createEl("h3", {
+        text: section.heading,
+        cls: "oc-help-heading",
+      });
+      const bodyEl = sectionEl.createDiv("oc-help-body");
+      await MarkdownRenderer.render(
+        this.app,
+        section.body,
+        bodyEl,
+        "",
+        this
+      );
+    }
+
+    this.scrollToBottom();
+  }
+
+  // ============================================================
   // HELPERS
   // ============================================================
+
+  private static readonly MAX_HISTORY_MESSAGES = 100;
+  private static readonly MAX_HISTORY_CHARS = 500_000;
+
+  /**
+   * Save chat history with rolling size limits.
+   * Keeps the most recent messages within budget.
+   */
+  private async saveHistory(): Promise<void> {
+    let msgs = this.messages;
+
+    // Rolling limit: keep last N messages
+    if (msgs.length > ChatView.MAX_HISTORY_MESSAGES) {
+      msgs = msgs.slice(-ChatView.MAX_HISTORY_MESSAGES);
+    }
+
+    // Size limit: if serialized history is too large, keep trimming
+    let serialized = JSON.stringify(msgs);
+    while (serialized.length > ChatView.MAX_HISTORY_CHARS && msgs.length > 2) {
+      msgs = msgs.slice(2); // Remove oldest pair (user+assistant)
+      serialized = JSON.stringify(msgs);
+    }
+
+    this.plugin.settings.chatHistory = msgs;
+    await this.plugin.saveSettings();
+  }
 
   private clearChat(): void {
     this.messages = [];
     this.attachedContexts = [];
+    this.pendingFollowUps = [];
     this.chatContainer.empty();
     this.showWelcome();
     this.plugin.settings.chatHistory = [];

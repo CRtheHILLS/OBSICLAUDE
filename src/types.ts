@@ -6,19 +6,18 @@
 export interface ClaudeAssistantSettings {
   apiKey: string;
   model: "claude-sonnet-4-6" | "claude-opus-4-6" | "claude-haiku-4-5-20251001";
-  language: "en" | "ko" | "ja" | "de" | "zh";
+  language: "en" | "ko" | "ja" | "de" | "zh" | "es" | "fr";
   maxTokens: number;
   systemPrompt: string;
   excludedFolders: string[];
   frontmatterTemplate: Record<string, string>;
-  streamResponse: boolean;
   chatHistory: ChatMessage[];
 }
 
 export const DEFAULT_SETTINGS: ClaudeAssistantSettings = {
   apiKey: "",
   model: "claude-sonnet-4-6",
-  language: "ko",
+  language: "en",
   maxTokens: 4096,
   systemPrompt: "",
   excludedFolders: [".obsidian", ".trash"],
@@ -26,7 +25,6 @@ export const DEFAULT_SETTINGS: ClaudeAssistantSettings = {
     created: "{{date}}",
     tags: "[]",
   },
-  streamResponse: true,
   chatHistory: [],
 };
 
@@ -119,11 +117,3 @@ export interface VaultAnalysis {
   largestNotes: { path: string; size: number }[];
 }
 
-// ---- Streaming types ----
-
-export interface StreamCallbacks {
-  onText: (text: string) => void;
-  onToolUse: (toolUse: ClaudeToolUseBlock) => void;
-  onComplete: (response: ClaudeResponse) => void;
-  onError: (error: Error) => void;
-}

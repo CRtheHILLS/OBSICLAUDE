@@ -1,5 +1,5 @@
 /* ============================================================
-   OBSICLAUD - Minimal Apple-inspired UI
+   OBSICLAUDE - Minimal Apple-inspired UI
    ============================================================ */
 
 .oc {
@@ -285,7 +285,7 @@
 }
 
 .oc-processing-step-icon.is-done {
-  color: #10b981;
+  color: var(--text-success, #10b981);
 }
 
 .oc-processing-step-text {
@@ -659,13 +659,13 @@
 
 /* Stop button */
 .oc-send-btn.is-stop {
-  background: #ef4444;
+  background: var(--text-error, #ef4444);
   color: white;
 }
 
 .oc-send-btn.is-stop:hover {
-  background: #dc2626;
-  opacity: 1;
+  background: var(--text-error, #dc2626);
+  opacity: 0.9;
 }
 
 /* ============================================================
@@ -736,6 +736,119 @@
   color: var(--text-faint);
   text-align: right;
   flex-shrink: 0;
+}
+
+/* ============================================================
+   Help Guide Page
+   ============================================================ */
+
+.oc-help {
+  padding: 16px;
+  animation: oc-in 0.2s ease-out;
+}
+
+.oc-help-back {
+  margin-bottom: 12px;
+}
+
+.oc-help-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.oc-help-back-btn:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+.oc-help-back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.oc-help-title {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #a78bfa, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 16px;
+}
+
+.oc-help-section {
+  margin-bottom: 20px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--background-secondary);
+}
+
+.oc-help-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin: 0 0 8px;
+}
+
+.oc-help-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.oc-help-body p { margin: 0 0 8px; }
+.oc-help-body p:last-child { margin-bottom: 0; }
+
+.oc-help-body strong {
+  color: var(--text-normal);
+}
+
+.oc-help-body code {
+  font-size: 12px;
+  background: var(--background-primary);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--text-accent);
+}
+
+.oc-help-body ul, .oc-help-body ol {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+
+.oc-help-body li {
+  margin: 4px 0;
+}
+
+.oc-help-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.oc-help-body th, .oc-help-body td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.oc-help-body th {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.oc-help-body a {
+  color: var(--text-accent);
 }
 
 /* Drag over highlight */
