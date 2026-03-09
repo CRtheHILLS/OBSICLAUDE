@@ -1,39 +1,45 @@
-<p align="center">
-  <img src="assets/obsiclaude-logo.png" alt="OBSICLAUDE" width="120" />
-</p>
-
 <h1 align="center">OBSICLAUDE</h1>
 
 <p align="center">
-  <strong>Your AI-powered vault assistant for Obsidian — powered by Claude.</strong><br />
+  <strong>AI-powered vault assistant for Obsidian — powered by Claude.</strong><br />
   <em>Chat naturally. Claude does the rest.</em>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#installation">Installation</a> •
+  <a href="#quick-start">Quick Start</a> •
   <a href="#usage">Usage</a> •
   <a href="#architecture">Architecture</a> •
-  <a href="#contributing">Contributing</a> •
-  <a href="#license">License</a>
+  <a href="#vault-tools-20">Tools</a> •
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/obsidian-1.0.0+-purple" alt="Obsidian" />
+  <img src="https://img.shields.io/badge/Claude-Sonnet%20%7C%20Opus%20%7C%20Haiku-orange" alt="Models" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
-  <img src="https://img.shields.io/badge/languages-5-orange" alt="Languages" />
+  <img src="https://img.shields.io/badge/languages-5-yellow" alt="Languages" />
+</p>
+
+<p align="center">
+  <strong>The first Obsidian plugin that lets Claude <em>actually touch</em> your vault.</strong><br />
+  Not just chat — create notes, move files, find orphans, build MOCs, batch-edit frontmatter, and more.<br />
+  All through natural conversation. All local. All streaming.
 </p>
 
 ---
 
-## Hi, I'm CR 👋
+## Why OBSICLAUDE?
 
-I built OBSICLAUDE because I was tired of AI tools that just *chat*. I wanted one that actually **does things** in my vault — creates notes, reorganizes folders, finds orphans, analyzes connections — all through natural conversation. No copy-pasting. No manual file juggling. Just tell Claude what you want, and watch it happen in real time.
+Most AI plugins for Obsidian are glorified chatbots — they read your notes and generate text. That's it.
 
-This started as a weekend hack and turned into something I use every single day. If you manage a vault with hundreds (or thousands) of notes, this will change how you work.
+**OBSICLAUDE is different.** It gives Claude 20 real tools to **read, write, search, organize, and analyze** your vault. It runs an agentic loop: Claude thinks, picks a tool, observes the result, and repeats — autonomously — until the job is done. Just like an AI coding assistant, but for your knowledge base.
 
-Ship it. v1.0. Let's go.
+> "Create an index note that links all my orphan notes by topic."
+
+Claude will: find orphans → read each one → categorize → create the index → add wikilinks. All in one go.
 
 ---
 
@@ -42,56 +48,67 @@ Ship it. v1.0. Let's go.
 
 ## Features
 
-🧠 **Agentic AI Loop** — Claude doesn't just answer questions. It autonomously plans and executes multi-step tasks using **20 vault tools**: create, read, edit, delete, move, search, analyze tags, find backlinks, detect orphans, spot duplicates, and more. It thinks, acts, observes, and repeats until the job is done.
+### Agentic AI Loop
+Claude doesn't just answer questions. It autonomously plans and executes multi-step vault operations using **20 tools** — create, read, edit, delete, move, search, analyze tags, find backlinks, detect orphans, spot duplicates, and more. It thinks, acts, observes, and loops until the job is done. This is the same **ReAct (Reason + Act)** pattern behind AI coding assistants like Cursor and Claude Code.
 
-⚡ **Real-Time Streaming** — Responses stream in token-by-token, just like the Claude web app. No waiting for a wall of text.
+### Real-Time Streaming
+Responses stream in token-by-token with a live processing indicator showing exactly what Claude is doing — which tools it's calling, how many actions completed. No waiting for a wall of text.
 
-🎯 **Drag & Drop** — Drag files or entire folders into the chat window. OBSICLAUDE instantly understands the context.
+### Drag & Drop Context
+Drag files or entire folders from Obsidian's file explorer directly into the chat. OBSICLAUDE attaches them as context chips, so Claude knows exactly what you're referring to. 5 different resolution methods ensure drag & drop works across all platforms.
 
-🔍 **Slash Commands** — Quick actions at your fingertips:
+### Slash Commands
+Quick actions at your fingertips:
 
 | Command | What it does |
 |---------|-------------|
-| `/explore` | Get a high-level overview of your vault structure |
-| `/analyze` | Deep analysis of vault content and connections |
-| `/tags` | Discover and manage your tag taxonomy |
+| `/explore` | High-level overview of your vault structure |
+| `/analyze` | Deep health check — orphans, missing links, tag distribution |
+| `/tags` | Tag taxonomy with usage counts |
 | `/orphans` | Find notes with no incoming or outgoing links |
-| `/recent` | See recently modified notes |
-| `/search` | Semantic search across your entire vault |
+| `/recent` | Recently modified notes |
+| `/search` | Full-text search across your entire vault |
 | `/duplicates` | Detect duplicate or near-duplicate content |
-| `/links` | Analyze your vault's link graph |
+| `/links` | Suggest links between related but unconnected notes |
 
-🛑 **Stop Button + ESC** — Interrupt Claude mid-thought at any time. Full control, always.
+### Stop & Follow-Up
+- **Stop button + ESC** — interrupt Claude mid-thought at any time
+- **Follow-up messages** — send corrections or additional context while Claude is still processing. Messages queue up and execute in order
 
-💬 **Follow-Up Messages** — Send additional context or corrections while Claude is still processing. It reads them on the fly.
+### Multi-Model Support
+Switch between **Claude Sonnet** (fast), **Opus** (deep), and **Haiku** (light) from the chat header. Pick the right model for the job — quick vault search vs. deep reorganization.
 
-🌍 **5 Languages** — Full UI localization in English, Korean (한국어), Japanese (日本語), German (Deutsch), and Chinese (中文).
+### 5 Languages
+Full UI in English, Korean (한국어), Japanese (日本語), German (Deutsch), and Chinese (中文).
 
-🔒 **Excluded Folder Protection** — Mark folders as off-limits and OBSICLAUDE enforces it **server-side**. Your private notes stay private.
+### Privacy & Security
+- **Excluded folder protection** — mark folders as off-limits, enforced server-side
+- **All tools run locally** — nothing touches your files except Obsidian's own API
+- **Direct to Anthropic** — no middleman servers, no telemetry, no data collection
+- **Your API key, your data** — OBSICLAUDE never phones home
 
-📋 **Copy Button + Text Selection** — One-click copy on any response. Select and copy partial text freely.
+### Beautiful, Native UI
+Excalidraw-inspired interface with a crystal mascot. Dark and light theme support. Processing indicator with expandable tool call details. Copy button on every response. Feels like it belongs in Obsidian.
 
-🎨 **Beautiful UI** — An Excalidraw-inspired interface with a cute crystal mascot. Dark and light themes. Feels native to Obsidian.
-
-🤖 **Model Switching** — Toggle between Claude Sonnet, Opus, and Haiku right from the chat header. Pick the right brain for the job.
+---
 
 ## Installation
 
-> ⚠️ OBSICLAUDE is not yet in the Obsidian Community Plugins directory. Manual installation only for now.
+### Quick Install (BRAT)
+
+1. Install the [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat) in Obsidian
+2. Open BRAT settings → **Add Beta Plugin**
+3. Enter: `CRtheHILLS/obsiclaude`
+4. Enable OBSICLAUDE in Community Plugins
+5. Set your **Anthropic API key** in OBSICLAUDE settings
 
 ### Manual Install
 
-1. Download the latest release (`main.js`, `styles.css`, `manifest.json`) from the [Releases](https://github.com/CRtheHILLS/obsiclaude/releases) page.
-2. In your vault, navigate to `.obsidian/plugins/` and create a folder called `obsiclaude`.
-3. Copy the three files into that folder:
-   ```
-   .obsidian/plugins/obsiclaude/
-   ├── main.js
-   ├── manifest.json
-   └── styles.css
-   ```
-4. Open Obsidian → Settings → Community Plugins → Enable **OBSICLAUDE**.
-5. Go to OBSICLAUDE settings and enter your **Anthropic API key**.
+1. Download `main.js`, `styles.css`, `manifest.json` from the [Releases](https://github.com/CRtheHILLS/obsiclaude/releases) page
+2. Create `.obsidian/plugins/obsiclaude/` in your vault
+3. Copy the three files into that folder
+4. Enable **OBSICLAUDE** in Settings → Community Plugins
+5. Enter your **Anthropic API key** in OBSICLAUDE settings
 
 ### Build from Source
 
@@ -102,30 +119,56 @@ npm install
 npm run build
 ```
 
-Then copy `main.js`, `styles.css`, and `manifest.json` to your vault's plugin folder as described above.
+Copy `main.js`, `styles.css`, and `manifest.json` to your vault's plugin folder.
+
+---
+
+## Quick Start
+
+1. **Open the panel** — Click the ✨ sparkle icon in the left ribbon
+2. **Get your API key** — Go to [console.anthropic.com](https://console.anthropic.com/) → API Keys → Create
+3. **Paste it** in OBSICLAUDE settings
+4. **Start chatting** — or click "Explore vault" on the welcome screen
+
+That's it. No config files, no YAML setup, no templates to install.
+
+---
 
 ## Usage
 
-1. **Open the panel** — Click the crystal icon in the ribbon, or use the command palette.
-2. **Talk naturally** — Ask Claude to do anything with your vault:
+### Talk naturally
 
-   > "Create a new MOC for all my project notes and link them together."
+Ask Claude to do anything with your vault:
 
-   > "Find all orphan notes and suggest where they should be linked."
+> "Create a new MOC for all my project notes and link them together."
 
-   > "Summarize everything I wrote last week."
+> "Find all orphan notes and suggest where they should be linked."
 
-   > "Organize all notes in the inbox folder by moving them to topic folders."
+> "Summarize everything I wrote last week."
 
-   > "Add `status: review` frontmatter to every note in the drafts folder."
+> "Organize all notes in the inbox folder by moving them to topic folders."
 
-3. **Use slash commands** — Type `/` to see quick actions like `/explore`, `/orphans`, `/tags`.
-4. **Drag and drop** — Drop files or folders into the chat for instant context.
-5. **Switch models** — Use the dropdown in the chat header to pick Sonnet (fast), Opus (deep), or Haiku (light).
+> "Add `status: review` frontmatter to every note in the drafts folder."
+
+> "What are the most common tags in my vault? Show me a breakdown."
+
+### Drag and drop
+
+Drop files or folders from the sidebar into the chat. Context chips appear above the input — Claude will read them before responding.
+
+### Slash commands
+
+Type `/` for instant actions. No typing required — just pick from the menu.
+
+### Model switching
+
+Click the model name in the chat header (e.g., "Sonnet") to switch between models mid-conversation.
+
+---
 
 ## Architecture
 
-OBSICLAUDE uses an **agentic loop** — the same pattern behind advanced AI coding assistants:
+OBSICLAUDE uses an **agentic loop** — the same ReAct pattern behind advanced AI coding assistants:
 
 ```
 User Message
@@ -138,50 +181,88 @@ User Message
 │  Observes the result    │
 │         ↓               │
 │  Decides: done, or      │
-│  use another tool?      │──→  loops back if more work is needed
+│  use another tool?      │──→  loops back if more work needed (up to 15 iterations)
 └─────────────────────────┘
     ↓
 Final Response to User
 ```
 
-**Privacy first.** All tool calls execute locally inside your Obsidian vault. Nothing leaves your machine except the conversation with the Anthropic API — and that goes directly to Anthropic's servers. No middleman. No telemetry. No third-party anything.
+### Technical Highlights
+
+- **Streaming SSE** with fallback to non-streaming via Obsidian's `requestUrl`
+- **Token overflow prevention** — automatic conversation trimming, tool result truncation, history size limits
+- **Robust drag & drop** — 5 resolution methods (Obsidian drag manager, DataTransfer, URI parsing, filename matching)
+- **Follow-up queue** — FIFO message queue processes follow-ups sequentially after current task completes
+- **Zero dependencies** — only Obsidian API + Anthropic API. No LangChain, no vector DB, no local model
+
+---
 
 ## Vault Tools (20)
 
 | Tool | Description |
 |------|-------------|
-| `create_note` | Create notes with frontmatter and wikilinks |
+| `create_note` | Create notes with content, frontmatter, and wikilinks |
 | `read_note` | Read note content and metadata |
-| `edit_note` | Replace, append, prepend, or find-and-replace |
-| `delete_note` | Move notes to trash |
-| `move_note` | Move or rename notes (updates links) |
-| `list_files` | Browse vault structure |
+| `edit_note` | Replace, append, prepend, or find-and-replace in notes |
+| `delete_note` | Move notes to system trash safely |
+| `move_note` | Move or rename notes |
+| `list_files` | Browse vault directory structure |
 | `create_folder` | Create new folders |
 | `search_notes` | Full-text search by content, title, or tags |
-| `get_frontmatter` | Read YAML frontmatter |
-| `set_frontmatter` | Update frontmatter fields |
-| `get_backlinks` | Find all notes linking to a note |
-| `get_outgoing_links` | List all wikilinks in a note |
-| `analyze_vault` | Full vault statistics report |
-| `find_orphan_notes` | Detect unlinked notes |
-| `suggest_links` | Recommend potential wikilinks |
-| `batch_frontmatter` | Bulk update frontmatter |
-| `find_duplicate_notes` | Detect similar note titles |
-| `get_active_note` | Get the currently open note |
-| `open_note` | Open a note in the editor |
-| `get_all_tags` | Tag usage statistics |
+| `get_frontmatter` | Read YAML frontmatter metadata |
+| `set_frontmatter` | Update or add frontmatter fields |
+| `get_backlinks` | Find all notes linking TO a specific note |
+| `get_outgoing_links` | List all wikilinks FROM a note |
+| `analyze_vault` | Full vault statistics — note count, folder count, tag distribution |
+| `find_orphan_notes` | Detect notes with no incoming or outgoing links |
+| `suggest_links` | AI-powered link recommendations between related notes |
+| `batch_frontmatter` | Bulk update frontmatter across multiple notes at once |
+| `find_duplicate_notes` | Detect similar note titles and potential duplicates |
+| `get_active_note` | Get the currently open note in the editor |
+| `open_note` | Open any note in the Obsidian editor |
+| `get_all_tags` | Tag usage statistics across the entire vault |
+
+---
+
+## Comparison
+
+| Feature | OBSICLAUDE | Copilot for Obsidian | Smart Connections | Text Generator |
+|---------|-----------|---------------------|-------------------|----------------|
+| **Agentic tool use** | 20 tools | No | No | No |
+| **Create/edit/move notes** | Yes | No | No | Append only |
+| **Multi-step automation** | Up to 15 iterations | No | No | No |
+| **Real-time streaming** | Yes | Yes | No | Yes |
+| **Drag & drop context** | Files + folders | No | No | No |
+| **Find orphans/duplicates** | Built-in tools | No | Similarity only | No |
+| **Batch frontmatter** | Yes | No | No | No |
+| **Follow-up queue** | Yes | No | No | No |
+| **Model switching** | Sonnet/Opus/Haiku | GPT only | Varies | Varies |
+| **Privacy** | Direct to Anthropic | Direct to OpenAI | Local embeddings | Varies |
+
+---
+
+## Roadmap
+
+- [ ] Community plugin submission
+- [ ] Template system for common workflows
+- [ ] Canvas/graph view integration
+- [ ] Voice input support
+- [ ] Plugin API for custom tools
+
+---
 
 ## Contributing
 
-Contributions are welcome! Whether it's bug reports, feature requests, or pull requests — all appreciated.
+Contributions welcome! Bug reports, feature requests, and pull requests all appreciated.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-thing`)
-3. Commit your changes (`git commit -m 'Add amazing thing'`)
-4. Push to the branch (`git push origin feature/amazing-thing`)
-5. Open a Pull Request
+3. Commit your changes
+4. Push and open a Pull Request
 
-Found a bug? [Open an issue](https://github.com/CRtheHILLS/obsiclaude/issues) with steps to reproduce.
+Found a bug? [Open an issue](https://github.com/CRtheHILLS/obsiclaude/issues).
+
+---
 
 ## License
 
@@ -192,3 +273,5 @@ Found a bug? [Open an issue](https://github.com/CRtheHILLS/obsiclaude/issues) wi
 <p align="center">
   Built with ☕ and too many late nights by <a href="https://github.com/CRtheHILLS">CR</a>.
 </p>
+
+<!-- SEO: obsidian plugin, claude ai, vault management, note organization, obsidian ai assistant, knowledge management, ai agent, agentic ai, obsidian automation, note-taking ai, pkm tool, second brain, zettelkasten ai, obsidian claude, anthropic, llm plugin, ai note-taking, vault analyzer, orphan notes, backlink finder, frontmatter editor, obsidian chatbot, ai writing assistant, obsidian productivity -->

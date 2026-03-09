@@ -489,6 +489,7 @@ export class ChatView extends ItemView {
   // ============================================================
 
   private pendingFollowUps: string[] = [];
+  private _isFollowUpReplay = false;
 
   private async handleSend(): Promise<void> {
     const text = this.inputEl.value.trim();
@@ -537,15 +538,17 @@ export class ChatView extends ItemView {
     }
     this.clearContexts();
 
-    // Render user message
-    const userMsg: ChatMessage = {
-      role: "user",
-      content: fullText,
-      timestamp: Date.now(),
-    };
-    this.messages.push(userMsg);
-    await this.renderMessage(userMsg);
-    this.scrollToBottom();
+    // Skip push/render if this is a follow-up replay (already added when queued)
+    if (!this._isFollowUpReplay) {
+      const userMsg: ChatMessage = {
+        role: "user",
+        content: fullText,
+        timestamp: Date.now(),
+      };
+      this.messages.push(userMsg);
+      await this.renderMessage(userMsg);
+      this.scrollToBottom();
+    }
 
     // Create streaming response container
     const responseWrapper = this.chatContainer.createDiv(
@@ -697,10 +700,15 @@ export class ChatView extends ItemView {
     await this.saveHistory();
 
     // Process queued follow-ups (FIFO)
+    // Note: follow-up messages were already added to this.messages and rendered
+    // when they were queued (see isProcessing block above), so we must skip
+    // the duplicate push/render inside handleSend. We use a flag for this.
     if (this.pendingFollowUps.length > 0) {
       const followUp = this.pendingFollowUps.shift()!;
+      this._isFollowUpReplay = true;
       this.inputEl.value = followUp;
       await this.handleSend();
+      this._isFollowUpReplay = false;
     }
   }
 
