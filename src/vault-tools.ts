@@ -477,13 +477,18 @@ export class VaultTools {
   private async readNote(path: string): Promise<string> {
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
-    const content = await this.app.vault.read(file);
+    let content = await this.app.vault.read(file);
+    const truncated = content.length > 50_000;
+    if (truncated) {
+      content = content.slice(0, 50_000) + "\n\n...(content truncated, note is very large)";
+    }
     return JSON.stringify({
       path: file.path,
       content,
       size: file.stat.size,
       created: file.stat.ctime,
       modified: file.stat.mtime,
+      truncated,
     });
   }
 
@@ -575,7 +580,14 @@ export class VaultTools {
       }
     }
 
-    return JSON.stringify({ folder: root || "/", count: files.length, files });
+    // Return summary + limited file list to prevent token overflow
+    const total = files.length;
+    const limited = files.slice(0, 200);
+    const result: any = { folder: root || "/", totalCount: total, files: limited };
+    if (total > 200) {
+      result.note = `Showing first 200 of ${total} items. Use a more specific folder path to narrow results.`;
+    }
+    return JSON.stringify(result);
   }
 
   private async createFolder(path: string): Promise<string> {
@@ -805,7 +817,11 @@ export class VaultTools {
       )
       .map((f) => f.path);
 
-    return JSON.stringify({ orphanNotes: orphans, count: orphans.length });
+    return JSON.stringify({
+      orphanNotes: orphans.slice(0, 50),
+      totalCount: orphans.length,
+      note: orphans.length > 50 ? `Showing first 50 of ${orphans.length} orphan notes.` : undefined,
+    });
   }
 
   private async suggestLinks(path: string): Promise<string> {
@@ -895,8 +911,8 @@ export class VaultTools {
     }
 
     return JSON.stringify({
-      duplicates: duplicates.slice(0, 30),
-      count: duplicates.length,
+      duplicates: duplicates.slice(0, 20),
+      totalCount: duplicates.length,
     });
   }
 
@@ -946,7 +962,11 @@ export class VaultTools {
       .sort((a, b) => b[1] - a[1])
       .map(([tag, count]) => ({ tag, count }));
 
-    return JSON.stringify({ tags: sorted, totalUniqueTags: sorted.length });
+    return JSON.stringify({
+      tags: sorted.slice(0, 100),
+      totalUniqueTags: sorted.length,
+      note: sorted.length > 100 ? `Showing top 100 of ${sorted.length} tags.` : undefined,
+    });
   }
 
   // ============================================================
