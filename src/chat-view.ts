@@ -200,9 +200,8 @@ export class ChatView extends ItemView {
     // Chat messages area
     this.chatContainer = container.createDiv("oc-messages");
 
-    // Always start fresh on open — clear any persisted history
-    this.plugin.settings.chatHistory = [];
-    await this.plugin.saveSettings();
+    // Start fresh on open
+    this.messages = [];
     this.showWelcome();
 
     // Drag & drop on the entire panel
@@ -217,7 +216,9 @@ export class ChatView extends ItemView {
         if (dm?.draggable) {
           this.capturedDraggable = dm.draggable;
         }
-      } catch {}
+      } catch (e) {
+        console.debug("OBSICLAUDE: dragManager access failed:", e);
+      }
     });
     oc.addEventListener("dragleave", (e) => {
       const related = e.relatedTarget as Node | null;
@@ -1096,7 +1097,9 @@ export class ChatView extends ItemView {
           }
         }
       }
-    } catch {}
+    } catch (e) {
+      console.debug("OBSICLAUDE: drop resolve via draggable failed:", e);
+    }
 
     if (resolved) return;
 
@@ -1151,7 +1154,9 @@ export class ChatView extends ItemView {
         try {
           clean = decodeURIComponent(clean);
           file = this.app.vault.getAbstractFileByPath(clean);
-        } catch {}
+        } catch {
+          // URI decode can fail on malformed strings — continue with other methods
+        }
       }
 
       // Try stripping URL prefixes
@@ -1362,14 +1367,14 @@ export class ChatView extends ItemView {
     await this.plugin.saveSettings();
   }
 
-  private clearChat(): void {
+  private async clearChat(): Promise<void> {
     this.messages = [];
     this.attachedContexts = [];
     this.pendingFollowUps = [];
     this.chatContainer.empty();
     this.showWelcome();
     this.plugin.settings.chatHistory = [];
-    this.plugin.saveSettings();
+    await this.plugin.saveSettings();
     this.renderContextBar();
     new Notice("New chat started");
   }
@@ -1670,7 +1675,11 @@ class WriteModal extends Modal {
       }
 
       const title = titleInput.value.trim();
-      const style = WRITING_STYLES.find((s) => s.id === this.selectedStyle)!;
+      const style = WRITING_STYLES.find((s) => s.id === this.selectedStyle);
+      if (!style) {
+        new Notice("Please select a writing style.");
+        return;
+      }
       const folder = this.targetFolder;
 
       // Build style-specific prompt

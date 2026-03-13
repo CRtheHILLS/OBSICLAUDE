@@ -166,7 +166,7 @@ ${this.settings.excludedFolders.join(", ")}`;
        * Streaming API call using fetch + SSE parsing
        */
       async callAPIStream(messages, tools, onTextDelta, signal) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e;
         const body = {
           model: this.settings.model,
           max_tokens: this.settings.maxTokens,
@@ -195,6 +195,9 @@ ${this.settings.excludedFolders.join(", ")}`;
           }
           throw new Error(msg);
         }
+        if (!resp.body) {
+          throw new Error("API response has no readable body");
+        }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -210,7 +213,7 @@ ${this.settings.excludedFolders.join(", ")}`;
             break;
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
-          buffer = lines.pop();
+          buffer = (_b = lines.pop()) != null ? _b : "";
           for (const line of lines) {
             if (!line.startsWith("data: "))
               continue;
@@ -221,8 +224,8 @@ ${this.settings.excludedFolders.join(", ")}`;
               const evt = JSON.parse(data);
               switch (evt.type) {
                 case "message_start":
-                  messageId = ((_b = evt.message) == null ? void 0 : _b.id) || "";
-                  usage = ((_c = evt.message) == null ? void 0 : _c.usage) || usage;
+                  messageId = ((_c = evt.message) == null ? void 0 : _c.id) || "";
+                  usage = ((_d = evt.message) == null ? void 0 : _d.usage) || usage;
                   break;
                 case "content_block_start":
                   if (evt.content_block.type === "text") {
@@ -261,12 +264,13 @@ ${this.settings.excludedFolders.join(", ")}`;
                   }
                   break;
                 case "message_delta":
-                  stopReason = ((_d = evt.delta) == null ? void 0 : _d.stop_reason) || stopReason;
+                  stopReason = ((_e = evt.delta) == null ? void 0 : _e.stop_reason) || stopReason;
                   if (evt.usage)
                     usage = { ...usage, ...evt.usage };
                   break;
               }
             } catch (e) {
+              console.warn("OBSICLAUDE: Failed to parse SSE event:", e);
             }
           }
         }
@@ -1040,7 +1044,8 @@ ${content}`;
           }
         }
         if ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.tags) {
-          const fmTags = Array.isArray(cache.frontmatter.tags) ? cache.frontmatter.tags : [cache.frontmatter.tags];
+          const rawTags = cache.frontmatter.tags;
+          const fmTags = Array.isArray(rawTags) ? rawTags.filter((t) => typeof t === "string") : typeof rawTags === "string" ? [rawTags] : [];
           const matchedFm = fmTags.find(
             (t) => t.toLowerCase().includes(queryLower)
           );
@@ -2104,8 +2109,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
     (0, import_obsidian3.setIcon)(clearBtn, "plus");
     clearBtn.addEventListener("click", () => this.clearChat());
     this.chatContainer = container.createDiv("oc-messages");
-    this.plugin.settings.chatHistory = [];
-    await this.plugin.saveSettings();
+    this.messages = [];
     this.showWelcome();
     const oc = container;
     oc.addEventListener("dragover", (e) => {
@@ -2118,6 +2122,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
           this.capturedDraggable = dm.draggable;
         }
       } catch (e2) {
+        console.debug("OBSICLAUDE: dragManager access failed:", e2);
       }
     });
     oc.addEventListener("dragleave", (e) => {
@@ -2833,6 +2838,7 @@ ${text}`;
         }
       }
     } catch (e2) {
+      console.debug("OBSICLAUDE: drop resolve via draggable failed:", e2);
     }
     if (resolved)
       return;
@@ -3041,14 +3047,14 @@ ${text}`;
     this.plugin.settings.chatHistory = msgs;
     await this.plugin.saveSettings();
   }
-  clearChat() {
+  async clearChat() {
     this.messages = [];
     this.attachedContexts = [];
     this.pendingFollowUps = [];
     this.chatContainer.empty();
     this.showWelcome();
     this.plugin.settings.chatHistory = [];
-    this.plugin.saveSettings();
+    await this.plugin.saveSettings();
     this.renderContextBar();
     new import_obsidian3.Notice("New chat started");
   }
@@ -3303,6 +3309,10 @@ var WriteModal = class extends import_obsidian3.Modal {
       }
       const title = titleInput.value.trim();
       const style = WRITING_STYLES.find((s) => s.id === this.selectedStyle);
+      if (!style) {
+        new import_obsidian3.Notice("Please select a writing style.");
+        return;
+      }
       const folder = this.targetFolder;
       let prompt = `Write a note for me using **Magic Write**.
 
@@ -3485,7 +3495,12 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
 // src/main.ts
 var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
   async onload() {
-    await this.loadSettings();
+    try {
+      await this.loadSettings();
+    } catch (e) {
+      console.error("OBSICLAUDE: Failed to load settings, using defaults:", e);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));

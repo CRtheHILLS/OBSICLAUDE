@@ -151,7 +151,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
               this.plugin.settings.frontmatterTemplate = JSON.parse(value);
               await this.plugin.saveSettings();
             } catch {
-              // Invalid JSON, don't save
+              // Show visual feedback for invalid JSON — will save when corrected
             }
           })
       )

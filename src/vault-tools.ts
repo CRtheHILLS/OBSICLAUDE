@@ -706,9 +706,10 @@ export class VaultTools {
         }
         // Also check frontmatter tags
         if (cache?.frontmatter?.tags) {
-          const fmTags: string[] = Array.isArray(cache.frontmatter.tags)
-            ? cache.frontmatter.tags
-            : [cache.frontmatter.tags];
+          const rawTags = cache.frontmatter.tags;
+          const fmTags: string[] = Array.isArray(rawTags)
+            ? rawTags.filter((t: unknown) => typeof t === "string")
+            : typeof rawTags === "string" ? [rawTags] : [];
           const matchedFm = fmTags.find((t) =>
             t.toLowerCase().includes(queryLower)
           );

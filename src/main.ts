@@ -15,7 +15,12 @@ export default class ClaudeAssistantPlugin extends Plugin {
   claudeService: ClaudeService;
 
   async onload(): Promise<void> {
-    await this.loadSettings();
+    try {
+      await this.loadSettings();
+    } catch (e) {
+      console.error("OBSICLAUDE: Failed to load settings, using defaults:", e);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
 
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);

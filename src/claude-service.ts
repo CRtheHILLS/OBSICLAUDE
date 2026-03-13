@@ -212,11 +212,16 @@ ${this.settings.excludedFolders.join(", ")}`;
       try {
         const err = await resp.json();
         msg = err?.error?.message || msg;
-      } catch {}
+      } catch {
+        // Response body not parseable — use status code message
+      }
       throw new Error(msg);
     }
 
-    const reader = resp.body!.getReader();
+    if (!resp.body) {
+      throw new Error("API response has no readable body");
+    }
+    const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
@@ -239,7 +244,7 @@ ${this.settings.excludedFolders.join(", ")}`;
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
-      buffer = lines.pop()!;
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
@@ -301,7 +306,9 @@ ${this.settings.excludedFolders.join(", ")}`;
               if (evt.usage) usage = { ...usage, ...evt.usage };
               break;
           }
-        } catch {}
+        } catch (e) {
+          console.warn("OBSICLAUDE: Failed to parse SSE event:", e);
+        }
       }
     }
 
