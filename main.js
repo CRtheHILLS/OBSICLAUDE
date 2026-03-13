@@ -2405,9 +2405,18 @@ ${text}`;
         role: m.role,
         content: m.content
       }));
+      let streamStarted = false;
       const result = await this.claudeService.chat(claudeMessages, {
         signal: (_a = this.abortController) == null ? void 0 : _a.signal,
         onText: (text2) => {
+          if (!streamStarted) {
+            streamStarted = true;
+            const lbl = procEl == null ? void 0 : procEl._label;
+            if (lbl) {
+              lbl.textContent = "Writing";
+              procEl._modeOverride = true;
+            }
+          }
           if (renderTimeout)
             clearTimeout(renderTimeout);
           renderTimeout = setTimeout(() => {
@@ -2531,6 +2540,10 @@ ${text}`;
       text: "Thinking",
       cls: "oc-processing-label"
     });
+    const timeBadge = statusRow.createSpan({
+      text: "",
+      cls: "oc-processing-time"
+    });
     const chevron = statusRow.createSpan("oc-processing-chevron");
     (0, import_obsidian3.setIcon)(chevron, "chevron-down");
     const detailsPanel = el.createDiv("oc-processing-details");
@@ -2541,14 +2554,20 @@ ${text}`;
       statusRow.toggleClass("is-expanded", show);
     });
     let phaseIdx = 0;
+    const startTime = Date.now();
     const interval = setInterval(() => {
-      phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
-      label.textContent = THINKING_PHASES[phaseIdx];
-    }, 2500);
+      const elapsed = Math.floor((Date.now() - startTime) / 1e3);
+      timeBadge.textContent = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+      if (!el._modeOverride) {
+        phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
+        label.textContent = THINKING_PHASES[phaseIdx];
+      }
+    }, 1e3);
     el._interval = interval;
     el._label = label;
     el._details = detailsPanel;
     el._actionCount = 0;
+    el._modeOverride = false;
     this.scrollToBottom();
     return el;
   }
@@ -2559,11 +2578,7 @@ ${text}`;
     procEl._actionCount = (procEl._actionCount || 0) + 1;
     const count = procEl._actionCount;
     label.textContent = `${text}... (action ${count})`;
-    const interval = procEl == null ? void 0 : procEl._interval;
-    if (interval) {
-      clearInterval(interval);
-      procEl._interval = null;
-    }
+    procEl._modeOverride = true;
   }
   addProcessingStep(procEl, label, status) {
     const details = procEl == null ? void 0 : procEl._details;

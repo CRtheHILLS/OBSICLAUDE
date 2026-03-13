@@ -240,6 +240,13 @@
   font-weight: 600;
 }
 
+.oc-processing-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 .oc-processing-chevron {
   color: var(--text-faint);
   display: flex;

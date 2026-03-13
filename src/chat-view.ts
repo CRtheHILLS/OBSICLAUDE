@@ -572,9 +572,19 @@ export class ChatView extends ItemView {
         content: m.content,
       }));
 
+      let streamStarted = false;
       const result = await this.claudeService.chat(claudeMessages, {
         signal: this.abortController?.signal,
         onText: (text: string) => {
+          // Update indicator to show writing mode on first text chunk
+          if (!streamStarted) {
+            streamStarted = true;
+            const lbl = (procEl as any)?._label as HTMLElement | undefined;
+            if (lbl) {
+              lbl.textContent = "Writing";
+              (procEl as any)._modeOverride = true;
+            }
+          }
           // Debounced markdown rendering during streaming
           if (renderTimeout) clearTimeout(renderTimeout);
           renderTimeout = setTimeout(() => {
@@ -733,6 +743,12 @@ export class ChatView extends ItemView {
       cls: "oc-processing-label",
     });
 
+    // Elapsed time badge
+    const timeBadge = statusRow.createSpan({
+      text: "",
+      cls: "oc-processing-time",
+    });
+
     const chevron = statusRow.createSpan("oc-processing-chevron");
     setIcon(chevron, "chevron-down");
 
@@ -746,16 +762,27 @@ export class ChatView extends ItemView {
       statusRow.toggleClass("is-expanded", show);
     });
 
-    // Cycle through fun phases
+    // Cycle through fun phases + update elapsed time
     let phaseIdx = 0;
+    const startTime = Date.now();
     const interval = setInterval(() => {
-      phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
-      label.textContent = THINKING_PHASES[phaseIdx];
-    }, 2500);
+      // Update elapsed time
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      timeBadge.textContent = elapsed < 60
+        ? `${elapsed}s`
+        : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+      // Cycle phase text (only if still in thinking mode, not tool/writing mode)
+      if (!(el as any)._modeOverride) {
+        phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
+        label.textContent = THINKING_PHASES[phaseIdx];
+      }
+    }, 1000);
     (el as any)._interval = interval;
     (el as any)._label = label;
     (el as any)._details = detailsPanel;
     (el as any)._actionCount = 0;
+    (el as any)._modeOverride = false;
 
     this.scrollToBottom();
     return el;
@@ -767,12 +794,7 @@ export class ChatView extends ItemView {
     (procEl as any)._actionCount = ((procEl as any)._actionCount || 0) + 1;
     const count = (procEl as any)._actionCount;
     label.textContent = `${text}... (action ${count})`;
-    // Stop the phase cycling once tools are running
-    const interval = (procEl as any)?._interval;
-    if (interval) {
-      clearInterval(interval);
-      (procEl as any)._interval = null;
-    }
+    (procEl as any)._modeOverride = true;
   }
 
   private addProcessingStep(
