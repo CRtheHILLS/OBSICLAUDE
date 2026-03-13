@@ -2177,7 +2177,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
         this.selectSlashItem();
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         this.handleSend();
       }
