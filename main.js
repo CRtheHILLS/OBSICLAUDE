@@ -2056,6 +2056,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
     this.capturedDraggable = null;
     this.abortController = null;
     this.slashMenu = null;
+    this.isComposing = false;
     // ============================================================
     // CHAT LOGIC (Streaming + Processing Indicator)
     // ============================================================
@@ -2103,20 +2104,9 @@ var _ChatView = class extends import_obsidian3.ItemView {
     (0, import_obsidian3.setIcon)(clearBtn, "plus");
     clearBtn.addEventListener("click", () => this.clearChat());
     this.chatContainer = container.createDiv("oc-messages");
-    const historySize = JSON.stringify(this.plugin.settings.chatHistory).length;
-    if (this.plugin.settings.chatHistory.length > 0 && historySize < 5e5) {
-      this.messages = [...this.plugin.settings.chatHistory];
-      for (const msg of this.messages) {
-        await this.renderMessage(msg);
-      }
-      this.scrollToBottom();
-    } else {
-      if (historySize >= 5e5) {
-        this.plugin.settings.chatHistory = [];
-        await this.plugin.saveSettings();
-      }
-      this.showWelcome();
-    }
+    this.plugin.settings.chatHistory = [];
+    await this.plugin.saveSettings();
+    this.showWelcome();
     const oc = container;
     oc.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -2155,7 +2145,15 @@ var _ChatView = class extends import_obsidian3.ItemView {
       this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 120) + "px";
       this.handleSlashInput();
     });
+    this.inputEl.addEventListener("compositionstart", () => {
+      this.isComposing = true;
+    });
+    this.inputEl.addEventListener("compositionend", () => {
+      this.isComposing = false;
+    });
     this.inputEl.addEventListener("keydown", (e) => {
+      if (this.isComposing || e.isComposing)
+        return;
       if (e.key === "Escape") {
         if (this.isProcessing) {
           e.preventDefault();
@@ -2177,7 +2175,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
         this.selectSlashItem();
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         this.handleSend();
       }
@@ -2729,20 +2727,39 @@ ${text}`;
       cls: "oc-hero-sub"
     });
     const actionsRow = w.createDiv("oc-welcome-actions");
-    const exploreBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
-    const exploreIcon = exploreBtn.createDiv("oc-action-icon");
-    (0, import_obsidian3.setIcon)(exploreIcon, "telescope");
-    exploreBtn.createSpan({ text: "Explore vault", cls: "oc-action-text" });
-    exploreBtn.addEventListener("click", () => {
-      this.inputEl.value = "Explore my vault: show the folder structure, all tags, and recently modified notes.";
-      this.handleSend();
+    const writeBtn = actionsRow.createDiv("oc-action-btn oc-action-write");
+    writeBtn.createDiv("oc-write-vine");
+    const writeIcon = writeBtn.createDiv("oc-action-icon");
+    (0, import_obsidian3.setIcon)(writeIcon, "wand-2");
+    writeBtn.createSpan({ text: "Magic Write", cls: "oc-action-text" });
+    writeBtn.addEventListener("click", () => {
+      new WriteModal(this, this.plugin).open();
     });
-    const analyzeBtn = actionsRow.createDiv("oc-action-btn oc-action-analyze");
-    const analyzeIcon = analyzeBtn.createDiv("oc-action-icon");
-    (0, import_obsidian3.setIcon)(analyzeIcon, "bar-chart-2");
-    analyzeBtn.createSpan({ text: "Analyze vault", cls: "oc-action-text" });
-    analyzeBtn.addEventListener("click", () => {
-      this.inputEl.value = "Analyze my vault health: find orphan notes, missing backlinks, tag distribution, and suggest improvements.";
+    const overviewBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
+    const overviewIcon = overviewBtn.createDiv("oc-action-icon");
+    (0, import_obsidian3.setIcon)(overviewIcon, "telescope");
+    overviewBtn.createSpan({ text: "Vault overview", cls: "oc-action-text" });
+    overviewBtn.addEventListener("click", () => {
+      this.inputEl.value = [
+        "Run a vault diagnostic in two phases.",
+        "",
+        "**Phase 1 \u2014 Core scan (do this now):**",
+        "1. list_files \u2014 map the folder tree. Rate organization (flat? too nested? well-structured?).",
+        "2. get_all_tags \u2014 show top 15 tags, spot inconsistencies (singular/plural, typos, overlaps).",
+        "3. Show 10 most recently modified notes.",
+        "",
+        "Give a **Vault Health Score (A\u2013F)** with a short summary of strengths and weaknesses.",
+        "",
+        "**Phase 2 \u2014 Present options to the user:**",
+        "After showing Phase 1 results, offer these as numbered choices:",
+        "1. Orphan check \u2014 find notes with no links",
+        "2. Duplicate scan \u2014 detect similar notes",
+        "3. Link density \u2014 check how well-connected notes are",
+        "4. Reorganize \u2014 suggest a better folder structure",
+        "5. Tag cleanup \u2014 fix inconsistent tags",
+        "",
+        "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different."
+      ].join("\n");
       this.handleSend();
     });
     const hint = w.createDiv("oc-drop-hint");
@@ -3072,6 +3089,300 @@ var ChatView = _ChatView;
 // ============================================================
 ChatView.MAX_HISTORY_MESSAGES = 100;
 ChatView.MAX_HISTORY_CHARS = 5e5;
+var WRITING_STYLES = [
+  {
+    id: "note",
+    label: "Note",
+    icon: "file-text",
+    desc: "General note",
+    frontmatter: "tags, date, aliases",
+    structure: "Use clear headings (##). Keep paragraphs short. Add a TL;DR at the top if the note is long.",
+    tone: "Clear, direct, personal. Write as if explaining to a smart friend."
+  },
+  {
+    id: "blog",
+    label: "Blog Post",
+    icon: "pen-line",
+    desc: "Article with hook & sections",
+    frontmatter: "tags, date, author, status: draft, category, description (1-line summary for SEO)",
+    structure: "Start with a compelling hook/intro paragraph. Use ## sections with descriptive headings. Include a conclusion with key takeaways. Add a '---' separator before the conclusion.",
+    tone: "Engaging, slightly conversational but authoritative. Use rhetorical questions. Vary sentence length for rhythm."
+  },
+  {
+    id: "summary",
+    label: "Summary",
+    icon: "align-left",
+    desc: "Concise digest",
+    frontmatter: "tags, date, source (what this summarizes), status: summary",
+    structure: "Start with a 1-2 sentence overview. Use bullet points for key points. End with 'Key Takeaways' section. Maximum 500 words \u2014 brevity is critical.",
+    tone: "Neutral, factual, dense. Every sentence must carry information. No filler."
+  },
+  {
+    id: "meeting",
+    label: "Meeting Notes",
+    icon: "users",
+    desc: "Agenda & action items",
+    frontmatter: "tags: [meeting], date, attendees: [], status: actionable",
+    structure: "## Agenda (numbered list), ## Discussion (key points per topic), ## Decisions (what was decided), ## Action Items (checkbox list with - [ ] owner: task format), ## Next Meeting",
+    tone: "Factual, brief. Use bullet points. Focus on decisions and actions, not discussion details."
+  },
+  {
+    id: "howto",
+    label: "How-to",
+    icon: "list-checks",
+    desc: "Step-by-step guide",
+    frontmatter: "tags: [guide, howto], date, difficulty: beginner|intermediate|advanced, estimated-time",
+    structure: "## Prerequisites (what you need before starting), ## Steps (numbered, one action per step), ## Troubleshooting (common issues), ## Result (what success looks like)",
+    tone: "Instructional, precise. Use imperative mood ('Click', 'Open', 'Run'). Each step = one action."
+  },
+  {
+    id: "research",
+    label: "Research",
+    icon: "search",
+    desc: "Deep analysis with sources",
+    frontmatter: "tags: [research], date, status: draft, topic, question (the research question)",
+    structure: "## Research Question, ## Background, ## Findings (with sub-sections), ## Analysis, ## Open Questions, ## Sources & References",
+    tone: "Academic but readable. Present evidence before conclusions. Acknowledge uncertainty. Use [[wikilinks]] heavily to connect to existing knowledge."
+  },
+  {
+    id: "creative",
+    label: "Creative",
+    icon: "feather",
+    desc: "Free-form, expressive",
+    frontmatter: "tags: [creative, writing], date, mood, inspiration",
+    structure: "No rigid structure required. Use whitespace and line breaks for pacing. Can use poetry formatting, stream-of-consciousness, or narrative structure \u2014 whatever fits the content.",
+    tone: "Expressive, literary. Use vivid imagery, metaphors, and sensory details. Prioritize voice and feeling over information."
+  },
+  {
+    id: "moc",
+    label: "MOC",
+    icon: "map",
+    desc: "Map of Content \u2014 index note",
+    frontmatter: "tags: [MOC, index], date, scope (what this MOC covers)",
+    structure: "## Overview (1-2 sentences), then organize [[wikilinks]] into categorized sections with ## headings. Each section should have a brief description of what those linked notes cover. End with ## Related MOCs.",
+    tone: "Navigational. Brief descriptions, heavy on [[wikilinks]]. This note is a hub \u2014 it points to other notes, not contains content itself."
+  }
+];
+var FileFolderSuggestModal = class extends import_obsidian3.FuzzySuggestModal {
+  constructor(app, items, onChoose) {
+    super(app);
+    this.items = items;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search notes and folders...");
+  }
+  getItems() {
+    return this.items;
+  }
+  getItemText(item) {
+    return item.path;
+  }
+  onChooseItem(item) {
+    this.onChoose(item);
+  }
+};
+var WriteModal = class extends import_obsidian3.Modal {
+  constructor(chatView, plugin) {
+    super(plugin.app);
+    this.refs = [];
+    this.refChipsEl = null;
+    this.selectedStyle = "note";
+    this.targetFolder = "";
+    this.chatView = chatView;
+    this.plugin = plugin;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("oc-write-modal");
+    const header = contentEl.createDiv("oc-write-header");
+    const titleIcon = header.createDiv("oc-write-header-icon");
+    (0, import_obsidian3.setIcon)(titleIcon, "wand-2");
+    header.createEl("h2", { text: "Magic Write", cls: "oc-write-title" });
+    header.createEl("p", { text: "Describe what you want. Claude writes it.", cls: "oc-write-subtitle" });
+    const topicGroup = contentEl.createDiv("oc-write-group");
+    topicGroup.createEl("label", { text: "What should I write about?", cls: "oc-write-label" });
+    const topicArea = topicGroup.createEl("textarea", {
+      cls: "oc-write-textarea",
+      attr: { placeholder: "e.g. A blog post comparing Zettelkasten and PARA methods for knowledge management...", rows: "4" }
+    });
+    const titleGroup = contentEl.createDiv("oc-write-group oc-write-row");
+    titleGroup.createEl("label", { text: "Title (optional)", cls: "oc-write-label" });
+    const titleInput = titleGroup.createEl("input", {
+      cls: "oc-write-input",
+      attr: { placeholder: "Claude will suggest one if empty", type: "text" }
+    });
+    const styleGroup = contentEl.createDiv("oc-write-group");
+    styleGroup.createEl("label", { text: "Writing style", cls: "oc-write-label" });
+    const styleGrid = styleGroup.createDiv("oc-write-style-grid");
+    for (const style of WRITING_STYLES) {
+      const chip = styleGrid.createDiv("oc-write-style-chip");
+      if (style.id === this.selectedStyle)
+        chip.addClass("is-selected");
+      const chipIcon = chip.createDiv("oc-write-style-icon");
+      (0, import_obsidian3.setIcon)(chipIcon, style.icon);
+      chip.createSpan({ text: style.label, cls: "oc-write-style-label" });
+      chip.addEventListener("click", () => {
+        styleGrid.querySelectorAll(".oc-write-style-chip").forEach((el) => el.removeClass("is-selected"));
+        chip.addClass("is-selected");
+        this.selectedStyle = style.id;
+      });
+    }
+    const folderGroup = contentEl.createDiv("oc-write-group oc-write-row");
+    folderGroup.createEl("label", { text: "Save to folder", cls: "oc-write-label" });
+    const folderSelect = folderGroup.createEl("select", { cls: "oc-write-select" });
+    folderSelect.createEl("option", { text: "/ (vault root)", attr: { value: "" } });
+    const allFolders = [];
+    this.app.vault.getAllLoadedFiles().forEach((f) => {
+      if (f instanceof import_obsidian3.TFolder && f.path !== "/") {
+        allFolders.push(f.path);
+      }
+    });
+    allFolders.sort();
+    for (const fp of allFolders) {
+      const excluded = this.plugin.settings.excludedFolders || [];
+      if (excluded.some((ex) => fp.startsWith(ex)))
+        continue;
+      folderSelect.createEl("option", { text: fp, attr: { value: fp } });
+    }
+    folderSelect.addEventListener("change", () => {
+      this.targetFolder = folderSelect.value;
+    });
+    const refGroup = contentEl.createDiv("oc-write-group");
+    refGroup.createEl("label", { text: "Reference material (optional)", cls: "oc-write-label" });
+    const refRow = refGroup.createDiv("oc-write-ref-row");
+    const addFileBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
+    const addFileIcon = addFileBtn.createDiv("oc-write-add-ref-icon");
+    (0, import_obsidian3.setIcon)(addFileIcon, "file-search");
+    addFileBtn.createSpan({ text: "Browse vault", cls: "oc-write-add-ref-text" });
+    addFileBtn.addEventListener("click", () => {
+      const excluded = this.plugin.settings.excludedFolders || [];
+      const items = this.app.vault.getAllLoadedFiles().filter((f) => {
+        if (f.path === "/")
+          return false;
+        if (excluded.some((ex) => f.path.startsWith(ex)))
+          return false;
+        return true;
+      });
+      new FileFolderSuggestModal(this.app, items, (item) => {
+        if (item instanceof import_obsidian3.TFile) {
+          this.addRef({ type: "file", path: item.path, name: item.basename });
+        } else if (item instanceof import_obsidian3.TFolder) {
+          this.addRef({ type: "folder", path: item.path, name: item.name });
+        }
+      }).open();
+    });
+    const addFolderBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
+    const addFolderIcon = addFolderBtn.createDiv("oc-write-add-ref-icon");
+    (0, import_obsidian3.setIcon)(addFolderIcon, "folder-search");
+    addFolderBtn.createSpan({ text: "Browse folders", cls: "oc-write-add-ref-text" });
+    addFolderBtn.addEventListener("click", () => {
+      const excluded = this.plugin.settings.excludedFolders || [];
+      const folders = this.app.vault.getAllLoadedFiles().filter((f) => {
+        if (!(f instanceof import_obsidian3.TFolder) || f.path === "/")
+          return false;
+        if (excluded.some((ex) => f.path.startsWith(ex)))
+          return false;
+        return true;
+      });
+      new FileFolderSuggestModal(this.app, folders, (item) => {
+        if (item instanceof import_obsidian3.TFolder) {
+          this.addRef({ type: "folder", path: item.path, name: item.name });
+        }
+      }).open();
+    });
+    this.refChipsEl = refGroup.createDiv("oc-write-ref-chips");
+    const footer = contentEl.createDiv("oc-write-footer");
+    const submitBtn = footer.createEl("button", { text: "Write it", cls: "oc-write-submit" });
+    const submitIcon = submitBtn.createDiv("oc-write-submit-icon");
+    (0, import_obsidian3.setIcon)(submitIcon, "sparkles");
+    submitBtn.addEventListener("click", () => {
+      const topic = topicArea.value.trim();
+      if (!topic) {
+        new import_obsidian3.Notice("Please describe what you want to write.");
+        topicArea.focus();
+        return;
+      }
+      const title = titleInput.value.trim();
+      const style = WRITING_STYLES.find((s) => s.id === this.selectedStyle);
+      const folder = this.targetFolder;
+      let prompt = `Write a note for me using **Magic Write**.
+
+`;
+      prompt += `**Topic:** ${topic}
+`;
+      if (title)
+        prompt += `**Title:** ${title}
+`;
+      if (folder)
+        prompt += `**Save to:** ${folder}/
+`;
+      prompt += `
+## Style: ${style.label}
+`;
+      prompt += `**Frontmatter:** Include these YAML fields: ${style.frontmatter}
+`;
+      prompt += `**Structure:** ${style.structure}
+`;
+      prompt += `**Tone:** ${style.tone}
+`;
+      if (this.refs.length > 0) {
+        prompt += `
+## Reference Material \u2014 read these first:
+`;
+        for (const ref of this.refs) {
+          if (ref.type === "folder") {
+            prompt += `- Folder: ${ref.path}/ (list and read key notes inside)
+`;
+          } else {
+            prompt += `- Note: ${ref.path}
+`;
+          }
+        }
+        prompt += `
+Use the reference material as source. Synthesize, connect ideas, and cite with [[wikilinks]].
+`;
+      }
+      prompt += `
+## Instructions:
+`;
+      prompt += `1. Use create_note to create the note${folder ? ` in the "${folder}" folder` : ""}.
+`;
+      prompt += `2. Add YAML frontmatter exactly as specified above for this style.
+`;
+      prompt += `3. Follow the structure and tone guidelines strictly \u2014 they define how this style differs from others.
+`;
+      prompt += `4. Use [[wikilinks]] to link to relevant existing notes in the vault.
+`;
+      prompt += `5. After creating, use open_note to open it in the editor.
+`;
+      this.close();
+      for (const ref of this.refs) {
+        this.chatView.addContext(ref);
+      }
+      this.chatView.sendMessage(prompt);
+    });
+    setTimeout(() => topicArea.focus(), 50);
+  }
+  addRef(ref) {
+    if (this.refs.some((r) => r.path === ref.path))
+      return;
+    this.refs.push(ref);
+    if (!this.refChipsEl)
+      return;
+    const chip = this.refChipsEl.createDiv("oc-write-ref-chip");
+    const chipIcon = chip.createDiv("oc-write-ref-icon");
+    (0, import_obsidian3.setIcon)(chipIcon, ref.type === "folder" ? "folder" : "file-text");
+    chip.createSpan({ text: ref.name, cls: "oc-write-ref-name" });
+    const removeBtn = chip.createDiv("oc-write-ref-remove");
+    (0, import_obsidian3.setIcon)(removeBtn, "x");
+    removeBtn.addEventListener("click", () => {
+      this.refs = this.refs.filter((r) => r.path !== ref.path);
+      chip.remove();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 
 // src/settings.ts
 var import_obsidian4 = require("obsidian");

@@ -447,16 +447,7 @@
   transform: translateY(-1px);
 }
 
-.oc-action-analyze {
-  background: linear-gradient(135deg, rgba(244,114,182,0.12), rgba(236,72,153,0.08));
-  color: #ec4899;
-}
-
-.oc-action-analyze:hover {
-  border-color: #ec4899;
-  background: linear-gradient(135deg, rgba(244,114,182,0.2), rgba(236,72,153,0.14));
-  transform: translateY(-1px);
-}
+/* (analyze merged into vault overview — uses oc-action-explore styles) */
 
 .oc-action-icon {
   display: flex;
@@ -864,4 +855,433 @@
   outline: 2px dashed var(--interactive-accent);
   outline-offset: -4px;
   border-radius: 8px;
+}
+
+/* ============================================================
+   Magic Write Button (Welcome Screen)
+   ============================================================ */
+
+.oc-action-write {
+  position: relative;
+  background: linear-gradient(135deg, rgba(52,211,153,0.12), rgba(16,185,129,0.08));
+  color: #10b981;
+  overflow: hidden;
+  border: 1px solid rgba(16,185,129,0.25);
+}
+
+.oc-action-write:hover {
+  border-color: #10b981;
+  background: linear-gradient(135deg, rgba(52,211,153,0.22), rgba(16,185,129,0.16));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(16,185,129,0.2);
+}
+
+/* Animated vine wrapping around the button */
+.oc-write-vine {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.oc-write-vine::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -10%;
+  width: 120%;
+  height: calc(100% + 4px);
+  background:
+    radial-gradient(circle at 8% 50%, #34d399 2px, transparent 2px),
+    radial-gradient(circle at 22% 20%, #6ee7b7 1.5px, transparent 1.5px),
+    radial-gradient(circle at 35% 80%, #34d399 1.5px, transparent 1.5px),
+    radial-gradient(circle at 52% 15%, #6ee7b7 2px, transparent 2px),
+    radial-gradient(circle at 68% 75%, #34d399 1.5px, transparent 1.5px),
+    radial-gradient(circle at 85% 35%, #6ee7b7 2px, transparent 2px),
+    radial-gradient(circle at 95% 65%, #34d399 1.5px, transparent 1.5px);
+  opacity: 0.35;
+  animation: oc-vine-drift 6s ease-in-out infinite alternate;
+}
+
+.oc-write-vine::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(52,211,153,0.15) 15%,
+    transparent 30%,
+    rgba(110,231,183,0.1) 50%,
+    transparent 65%,
+    rgba(52,211,153,0.12) 80%,
+    transparent 100%
+  );
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Cpath d='M0,25 C20,10 40,40 60,25 C80,10 100,40 120,25 C140,10 160,40 180,25 C190,18 200,25 200,25' stroke='white' stroke-width='8' fill='none'/%3E%3Ccircle cx='30' cy='18' r='4' fill='white'/%3E%3Ccircle cx='90' cy='32' r='3' fill='white'/%3E%3Ccircle cx='150' cy='15' r='4' fill='white'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Cpath d='M0,25 C20,10 40,40 60,25 C80,10 100,40 120,25 C140,10 160,40 180,25 C190,18 200,25 200,25' stroke='white' stroke-width='8' fill='none'/%3E%3Ccircle cx='30' cy='18' r='4' fill='white'/%3E%3Ccircle cx='90' cy='32' r='3' fill='white'/%3E%3Ccircle cx='150' cy='15' r='4' fill='white'/%3E%3C/svg%3E");
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  animation: oc-vine-glow 3s ease-in-out infinite alternate;
+}
+
+@keyframes oc-vine-drift {
+  from { transform: translateX(-3px); }
+  to { transform: translateX(3px); }
+}
+
+@keyframes oc-vine-glow {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+
+/* Sparkle on the wand icon */
+.oc-action-write .oc-action-icon {
+  position: relative;
+  z-index: 1;
+}
+
+.oc-action-write .oc-action-icon::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  background: #fbbf24;
+  border-radius: 50%;
+  box-shadow: 0 0 6px 2px rgba(251,191,36,0.5);
+  animation: oc-wand-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes oc-wand-sparkle {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.oc-action-write .oc-action-text {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* ============================================================
+   Write Modal — Guided Writing Assistant
+   ============================================================ */
+
+.oc-write-modal {
+  padding: 0;
+}
+
+.oc-write-header {
+  text-align: center;
+  padding: 20px 20px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: linear-gradient(180deg, rgba(16,185,129,0.06) 0%, transparent 100%);
+}
+
+.oc-write-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(52,211,153,0.15), rgba(16,185,129,0.1));
+  margin-bottom: 8px;
+}
+
+.oc-write-header-icon svg {
+  width: 20px;
+  height: 20px;
+  color: #10b981;
+}
+
+.oc-write-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.oc-write-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.oc-write-group {
+  padding: 0 20px;
+  margin-bottom: 14px;
+}
+
+.oc-write-group:first-of-type {
+  margin-top: 16px;
+}
+
+.oc-write-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oc-write-row .oc-write-label {
+  flex-shrink: 0;
+  min-width: 120px;
+  margin-bottom: 0;
+}
+
+.oc-write-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
+.oc-write-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.oc-write-textarea:focus {
+  border-color: var(--interactive-accent);
+}
+
+.oc-write-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.oc-write-input {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.oc-write-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.oc-write-input::placeholder {
+  color: var(--text-faint);
+}
+
+.oc-write-select {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Style chips grid */
+.oc-write-style-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.oc-write-style-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+  user-select: none;
+}
+
+.oc-write-style-chip:hover {
+  border-color: var(--text-muted);
+  color: var(--text-normal);
+}
+
+.oc-write-style-chip.is-selected {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-weight: 600;
+}
+
+.oc-write-style-icon {
+  display: flex;
+  align-items: center;
+}
+
+.oc-write-style-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.oc-write-style-label {
+  font-weight: 500;
+}
+
+/* Browse buttons for reference files */
+.oc-write-ref-row {
+  display: flex;
+  gap: 8px;
+}
+
+.oc-write-add-ref-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.oc-write-add-ref-btn:hover {
+  border-color: #10b981;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.oc-write-add-ref-icon {
+  display: flex;
+  align-items: center;
+}
+
+.oc-write-add-ref-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.oc-write-add-ref-text {
+  font-weight: 500;
+}
+
+/* Reference chips */
+.oc-write-ref-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.oc-write-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-size: 12px;
+  font-weight: 500;
+  animation: oc-in 0.15s ease-out;
+}
+
+.oc-write-ref-icon {
+  display: flex;
+  align-items: center;
+}
+
+.oc-write-ref-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.oc-write-ref-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-write-ref-remove {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.12s;
+}
+
+.oc-write-ref-remove:hover {
+  opacity: 1;
+}
+
+.oc-write-ref-remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Submit button */
+.oc-write-footer {
+  padding: 12px 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.oc-write-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.oc-write-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.oc-write-submit-icon {
+  display: flex;
+  align-items: center;
+  order: -1;
+}
+
+.oc-write-submit-icon svg {
+  width: 16px;
+  height: 16px;
 }

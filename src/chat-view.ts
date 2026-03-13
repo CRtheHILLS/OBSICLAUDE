@@ -8,8 +8,11 @@ import {
   MarkdownRenderer,
   setIcon,
   Notice,
+  Modal,
+  FuzzySuggestModal,
   TFile,
   TFolder,
+  TAbstractFile,
 } from "obsidian";
 import { ChatMessage, ClaudeMessage, ToolCallInfo } from "./types";
 import { ClaudeService } from "./claude-service";
@@ -139,6 +142,7 @@ export class ChatView extends ItemView {
   private capturedDraggable: any = null;
   private abortController: AbortController | null = null;
   private slashMenu: HTMLElement | null = null;
+  private isComposing = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: ClaudeAssistantPlugin) {
     super(leaf);
@@ -196,22 +200,10 @@ export class ChatView extends ItemView {
     // Chat messages area
     this.chatContainer = container.createDiv("oc-messages");
 
-    // Restore chat history or show welcome
-    // Auto-clear if history is too large (prevents token overflow)
-    const historySize = JSON.stringify(this.plugin.settings.chatHistory).length;
-    if (this.plugin.settings.chatHistory.length > 0 && historySize < 500_000) {
-      this.messages = [...this.plugin.settings.chatHistory];
-      for (const msg of this.messages) {
-        await this.renderMessage(msg);
-      }
-      this.scrollToBottom();
-    } else {
-      if (historySize >= 500_000) {
-        this.plugin.settings.chatHistory = [];
-        await this.plugin.saveSettings();
-      }
-      this.showWelcome();
-    }
+    // Always start fresh on open — clear any persisted history
+    this.plugin.settings.chatHistory = [];
+    await this.plugin.saveSettings();
+    this.showWelcome();
 
     // Drag & drop on the entire panel
     const oc = container;
@@ -262,7 +254,18 @@ export class ChatView extends ItemView {
       this.handleSlashInput();
     });
 
+    // Track IME composition state for CJK input (Korean, Japanese, Chinese)
+    this.inputEl.addEventListener("compositionstart", () => {
+      this.isComposing = true;
+    });
+    this.inputEl.addEventListener("compositionend", () => {
+      this.isComposing = false;
+    });
+
     this.inputEl.addEventListener("keydown", (e) => {
+      // Block all Enter handling during IME composition
+      if (this.isComposing || e.isComposing) return;
+
       // ESC to stop processing
       if (e.key === "Escape") {
         if (this.isProcessing) {
@@ -286,7 +289,7 @@ export class ChatView extends ItemView {
         this.selectSlashItem();
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         this.handleSend();
       }
@@ -974,26 +977,46 @@ export class ChatView extends ItemView {
       cls: "oc-hero-sub",
     });
 
-    // Action buttons: Explore + Analyze
+    // Action buttons: Write (primary) + Vault Overview (combined explore+analyze)
     const actionsRow = w.createDiv("oc-welcome-actions");
 
-    const exploreBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
-    const exploreIcon = exploreBtn.createDiv("oc-action-icon");
-    setIcon(exploreIcon, "telescope");
-    exploreBtn.createSpan({ text: "Explore vault", cls: "oc-action-text" });
-    exploreBtn.addEventListener("click", () => {
-      this.inputEl.value =
-        "Explore my vault: show the folder structure, all tags, and recently modified notes.";
-      this.handleSend();
+    // Magic Write button — the core feature, opens writing assistant modal
+    const writeBtn = actionsRow.createDiv("oc-action-btn oc-action-write");
+    // Vine SVG wrapping around the button
+    writeBtn.createDiv("oc-write-vine");
+    const writeIcon = writeBtn.createDiv("oc-action-icon");
+    setIcon(writeIcon, "wand-2");
+    writeBtn.createSpan({ text: "Magic Write", cls: "oc-action-text" });
+    writeBtn.addEventListener("click", () => {
+      new WriteModal(this, this.plugin).open();
     });
 
-    const analyzeBtn = actionsRow.createDiv("oc-action-btn oc-action-analyze");
-    const analyzeIcon = analyzeBtn.createDiv("oc-action-icon");
-    setIcon(analyzeIcon, "bar-chart-2");
-    analyzeBtn.createSpan({ text: "Analyze vault", cls: "oc-action-text" });
-    analyzeBtn.addEventListener("click", () => {
-      this.inputEl.value =
-        "Analyze my vault health: find orphan notes, missing backlinks, tag distribution, and suggest improvements.";
+    // Vault Overview — combined explore + analyze
+    const overviewBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
+    const overviewIcon = overviewBtn.createDiv("oc-action-icon");
+    setIcon(overviewIcon, "telescope");
+    overviewBtn.createSpan({ text: "Vault overview", cls: "oc-action-text" });
+    overviewBtn.addEventListener("click", () => {
+      this.inputEl.value = [
+        "Run a vault diagnostic in two phases.",
+        "",
+        "**Phase 1 — Core scan (do this now):**",
+        "1. list_files — map the folder tree. Rate organization (flat? too nested? well-structured?).",
+        "2. get_all_tags — show top 15 tags, spot inconsistencies (singular/plural, typos, overlaps).",
+        "3. Show 10 most recently modified notes.",
+        "",
+        "Give a **Vault Health Score (A–F)** with a short summary of strengths and weaknesses.",
+        "",
+        "**Phase 2 — Present options to the user:**",
+        "After showing Phase 1 results, offer these as numbered choices:",
+        "1. Orphan check — find notes with no links",
+        "2. Duplicate scan — detect similar notes",
+        "3. Link density — check how well-connected notes are",
+        "4. Reorganize — suggest a better folder structure",
+        "5. Tag cleanup — fix inconsistent tags",
+        "",
+        "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different.",
+      ].join("\n");
       this.handleSend();
     });
 
@@ -1385,5 +1408,330 @@ export class ChatView extends ItemView {
   async sendMessage(text: string): Promise<void> {
     this.inputEl.value = text;
     await this.handleSend();
+  }
+}
+
+// ============================================================
+// Write Modal — Guided Writing Assistant
+// ============================================================
+
+interface WriteStyleConfig {
+  id: string;
+  label: string;
+  icon: string;
+  desc: string;
+  frontmatter: string;
+  structure: string;
+  tone: string;
+}
+
+const WRITING_STYLES: WriteStyleConfig[] = [
+  {
+    id: "note",
+    label: "Note",
+    icon: "file-text",
+    desc: "General note",
+    frontmatter: "tags, date, aliases",
+    structure: "Use clear headings (##). Keep paragraphs short. Add a TL;DR at the top if the note is long.",
+    tone: "Clear, direct, personal. Write as if explaining to a smart friend.",
+  },
+  {
+    id: "blog",
+    label: "Blog Post",
+    icon: "pen-line",
+    desc: "Article with hook & sections",
+    frontmatter: "tags, date, author, status: draft, category, description (1-line summary for SEO)",
+    structure: "Start with a compelling hook/intro paragraph. Use ## sections with descriptive headings. Include a conclusion with key takeaways. Add a '---' separator before the conclusion.",
+    tone: "Engaging, slightly conversational but authoritative. Use rhetorical questions. Vary sentence length for rhythm.",
+  },
+  {
+    id: "summary",
+    label: "Summary",
+    icon: "align-left",
+    desc: "Concise digest",
+    frontmatter: "tags, date, source (what this summarizes), status: summary",
+    structure: "Start with a 1-2 sentence overview. Use bullet points for key points. End with 'Key Takeaways' section. Maximum 500 words — brevity is critical.",
+    tone: "Neutral, factual, dense. Every sentence must carry information. No filler.",
+  },
+  {
+    id: "meeting",
+    label: "Meeting Notes",
+    icon: "users",
+    desc: "Agenda & action items",
+    frontmatter: "tags: [meeting], date, attendees: [], status: actionable",
+    structure: "## Agenda (numbered list), ## Discussion (key points per topic), ## Decisions (what was decided), ## Action Items (checkbox list with - [ ] owner: task format), ## Next Meeting",
+    tone: "Factual, brief. Use bullet points. Focus on decisions and actions, not discussion details.",
+  },
+  {
+    id: "howto",
+    label: "How-to",
+    icon: "list-checks",
+    desc: "Step-by-step guide",
+    frontmatter: "tags: [guide, howto], date, difficulty: beginner|intermediate|advanced, estimated-time",
+    structure: "## Prerequisites (what you need before starting), ## Steps (numbered, one action per step), ## Troubleshooting (common issues), ## Result (what success looks like)",
+    tone: "Instructional, precise. Use imperative mood ('Click', 'Open', 'Run'). Each step = one action.",
+  },
+  {
+    id: "research",
+    label: "Research",
+    icon: "search",
+    desc: "Deep analysis with sources",
+    frontmatter: "tags: [research], date, status: draft, topic, question (the research question)",
+    structure: "## Research Question, ## Background, ## Findings (with sub-sections), ## Analysis, ## Open Questions, ## Sources & References",
+    tone: "Academic but readable. Present evidence before conclusions. Acknowledge uncertainty. Use [[wikilinks]] heavily to connect to existing knowledge.",
+  },
+  {
+    id: "creative",
+    label: "Creative",
+    icon: "feather",
+    desc: "Free-form, expressive",
+    frontmatter: "tags: [creative, writing], date, mood, inspiration",
+    structure: "No rigid structure required. Use whitespace and line breaks for pacing. Can use poetry formatting, stream-of-consciousness, or narrative structure — whatever fits the content.",
+    tone: "Expressive, literary. Use vivid imagery, metaphors, and sensory details. Prioritize voice and feeling over information.",
+  },
+  {
+    id: "moc",
+    label: "MOC",
+    icon: "map",
+    desc: "Map of Content — index note",
+    frontmatter: "tags: [MOC, index], date, scope (what this MOC covers)",
+    structure: "## Overview (1-2 sentences), then organize [[wikilinks]] into categorized sections with ## headings. Each section should have a brief description of what those linked notes cover. End with ## Related MOCs.",
+    tone: "Navigational. Brief descriptions, heavy on [[wikilinks]]. This note is a hub — it points to other notes, not contains content itself.",
+  },
+];
+
+interface WriteRef {
+  type: "file" | "folder";
+  path: string;
+  name: string;
+}
+
+// File/folder picker using Obsidian's fuzzy search
+class FileFolderSuggestModal extends FuzzySuggestModal<TAbstractFile> {
+  private items: TAbstractFile[];
+  private onChoose: (item: TAbstractFile) => void;
+
+  constructor(app: any, items: TAbstractFile[], onChoose: (item: TAbstractFile) => void) {
+    super(app);
+    this.items = items;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search notes and folders...");
+  }
+
+  getItems(): TAbstractFile[] {
+    return this.items;
+  }
+
+  getItemText(item: TAbstractFile): string {
+    return item.path;
+  }
+
+  onChooseItem(item: TAbstractFile): void {
+    this.onChoose(item);
+  }
+}
+
+class WriteModal extends Modal {
+  private chatView: ChatView;
+  private plugin: ClaudeAssistantPlugin;
+  private refs: WriteRef[] = [];
+  private refChipsEl: HTMLElement | null = null;
+  private selectedStyle = "note";
+  private targetFolder = "";
+
+  constructor(chatView: ChatView, plugin: ClaudeAssistantPlugin) {
+    super(plugin.app);
+    this.chatView = chatView;
+    this.plugin = plugin;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("oc-write-modal");
+
+    // Title
+    const header = contentEl.createDiv("oc-write-header");
+    const titleIcon = header.createDiv("oc-write-header-icon");
+    setIcon(titleIcon, "wand-2");
+    header.createEl("h2", { text: "Magic Write", cls: "oc-write-title" });
+    header.createEl("p", { text: "Describe what you want. Claude writes it.", cls: "oc-write-subtitle" });
+
+    // Main textarea
+    const topicGroup = contentEl.createDiv("oc-write-group");
+    topicGroup.createEl("label", { text: "What should I write about?", cls: "oc-write-label" });
+    const topicArea = topicGroup.createEl("textarea", {
+      cls: "oc-write-textarea",
+      attr: { placeholder: "e.g. A blog post comparing Zettelkasten and PARA methods for knowledge management...", rows: "4" },
+    });
+
+    // Optional title
+    const titleGroup = contentEl.createDiv("oc-write-group oc-write-row");
+    titleGroup.createEl("label", { text: "Title (optional)", cls: "oc-write-label" });
+    const titleInput = titleGroup.createEl("input", {
+      cls: "oc-write-input",
+      attr: { placeholder: "Claude will suggest one if empty", type: "text" },
+    });
+
+    // Writing style selector
+    const styleGroup = contentEl.createDiv("oc-write-group");
+    styleGroup.createEl("label", { text: "Writing style", cls: "oc-write-label" });
+    const styleGrid = styleGroup.createDiv("oc-write-style-grid");
+    for (const style of WRITING_STYLES) {
+      const chip = styleGrid.createDiv("oc-write-style-chip");
+      if (style.id === this.selectedStyle) chip.addClass("is-selected");
+      const chipIcon = chip.createDiv("oc-write-style-icon");
+      setIcon(chipIcon, style.icon);
+      chip.createSpan({ text: style.label, cls: "oc-write-style-label" });
+      chip.addEventListener("click", () => {
+        styleGrid.querySelectorAll(".oc-write-style-chip").forEach((el) => el.removeClass("is-selected"));
+        chip.addClass("is-selected");
+        this.selectedStyle = style.id;
+      });
+    }
+
+    // Target folder
+    const folderGroup = contentEl.createDiv("oc-write-group oc-write-row");
+    folderGroup.createEl("label", { text: "Save to folder", cls: "oc-write-label" });
+    const folderSelect = folderGroup.createEl("select", { cls: "oc-write-select" });
+    folderSelect.createEl("option", { text: "/ (vault root)", attr: { value: "" } });
+    const allFolders: string[] = [];
+    this.app.vault.getAllLoadedFiles().forEach((f) => {
+      if (f instanceof TFolder && f.path !== "/") {
+        allFolders.push(f.path);
+      }
+    });
+    allFolders.sort();
+    for (const fp of allFolders) {
+      const excluded = this.plugin.settings.excludedFolders || [];
+      if (excluded.some((ex: string) => fp.startsWith(ex))) continue;
+      folderSelect.createEl("option", { text: fp, attr: { value: fp } });
+    }
+    folderSelect.addEventListener("change", () => {
+      this.targetFolder = folderSelect.value;
+    });
+
+    // Reference material — file picker button (uses Obsidian's fuzzy search)
+    const refGroup = contentEl.createDiv("oc-write-group");
+    refGroup.createEl("label", { text: "Reference material (optional)", cls: "oc-write-label" });
+    const refRow = refGroup.createDiv("oc-write-ref-row");
+    const addFileBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
+    const addFileIcon = addFileBtn.createDiv("oc-write-add-ref-icon");
+    setIcon(addFileIcon, "file-search");
+    addFileBtn.createSpan({ text: "Browse vault", cls: "oc-write-add-ref-text" });
+    addFileBtn.addEventListener("click", () => {
+      // Collect all files and folders
+      const excluded = this.plugin.settings.excludedFolders || [];
+      const items = this.app.vault.getAllLoadedFiles().filter((f: TAbstractFile) => {
+        if (f.path === "/") return false;
+        if (excluded.some((ex: string) => f.path.startsWith(ex))) return false;
+        return true;
+      });
+      new FileFolderSuggestModal(this.app, items, (item) => {
+        if (item instanceof TFile) {
+          this.addRef({ type: "file", path: item.path, name: item.basename });
+        } else if (item instanceof TFolder) {
+          this.addRef({ type: "folder", path: item.path, name: item.name });
+        }
+      }).open();
+    });
+
+    const addFolderBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
+    const addFolderIcon = addFolderBtn.createDiv("oc-write-add-ref-icon");
+    setIcon(addFolderIcon, "folder-search");
+    addFolderBtn.createSpan({ text: "Browse folders", cls: "oc-write-add-ref-text" });
+    addFolderBtn.addEventListener("click", () => {
+      const excluded = this.plugin.settings.excludedFolders || [];
+      const folders = this.app.vault.getAllLoadedFiles().filter((f: TAbstractFile) => {
+        if (!(f instanceof TFolder) || f.path === "/") return false;
+        if (excluded.some((ex: string) => f.path.startsWith(ex))) return false;
+        return true;
+      });
+      new FileFolderSuggestModal(this.app, folders, (item) => {
+        if (item instanceof TFolder) {
+          this.addRef({ type: "folder", path: item.path, name: item.name });
+        }
+      }).open();
+    });
+
+    this.refChipsEl = refGroup.createDiv("oc-write-ref-chips");
+
+    // Submit button
+    const footer = contentEl.createDiv("oc-write-footer");
+    const submitBtn = footer.createEl("button", { text: "Write it", cls: "oc-write-submit" });
+    const submitIcon = submitBtn.createDiv("oc-write-submit-icon");
+    setIcon(submitIcon, "sparkles");
+
+    submitBtn.addEventListener("click", () => {
+      const topic = topicArea.value.trim();
+      if (!topic) {
+        new Notice("Please describe what you want to write.");
+        topicArea.focus();
+        return;
+      }
+
+      const title = titleInput.value.trim();
+      const style = WRITING_STYLES.find((s) => s.id === this.selectedStyle)!;
+      const folder = this.targetFolder;
+
+      // Build style-specific prompt
+      let prompt = `Write a note for me using **Magic Write**.\n\n`;
+      prompt += `**Topic:** ${topic}\n`;
+      if (title) prompt += `**Title:** ${title}\n`;
+      if (folder) prompt += `**Save to:** ${folder}/\n`;
+      prompt += `\n## Style: ${style.label}\n`;
+      prompt += `**Frontmatter:** Include these YAML fields: ${style.frontmatter}\n`;
+      prompt += `**Structure:** ${style.structure}\n`;
+      prompt += `**Tone:** ${style.tone}\n`;
+
+      if (this.refs.length > 0) {
+        prompt += `\n## Reference Material — read these first:\n`;
+        for (const ref of this.refs) {
+          if (ref.type === "folder") {
+            prompt += `- Folder: ${ref.path}/ (list and read key notes inside)\n`;
+          } else {
+            prompt += `- Note: ${ref.path}\n`;
+          }
+        }
+        prompt += `\nUse the reference material as source. Synthesize, connect ideas, and cite with [[wikilinks]].\n`;
+      }
+
+      prompt += `\n## Instructions:\n`;
+      prompt += `1. Use create_note to create the note${folder ? ` in the "${folder}" folder` : ""}.\n`;
+      prompt += `2. Add YAML frontmatter exactly as specified above for this style.\n`;
+      prompt += `3. Follow the structure and tone guidelines strictly — they define how this style differs from others.\n`;
+      prompt += `4. Use [[wikilinks]] to link to relevant existing notes in the vault.\n`;
+      prompt += `5. After creating, use open_note to open it in the editor.\n`;
+
+      this.close();
+
+      for (const ref of this.refs) {
+        this.chatView.addContext(ref);
+      }
+
+      this.chatView.sendMessage(prompt);
+    });
+
+    setTimeout(() => topicArea.focus(), 50);
+  }
+
+  private addRef(ref: WriteRef): void {
+    if (this.refs.some((r) => r.path === ref.path)) return;
+    this.refs.push(ref);
+
+    if (!this.refChipsEl) return;
+    const chip = this.refChipsEl.createDiv("oc-write-ref-chip");
+    const chipIcon = chip.createDiv("oc-write-ref-icon");
+    setIcon(chipIcon, ref.type === "folder" ? "folder" : "file-text");
+    chip.createSpan({ text: ref.name, cls: "oc-write-ref-name" });
+    const removeBtn = chip.createDiv("oc-write-ref-remove");
+    setIcon(removeBtn, "x");
+    removeBtn.addEventListener("click", () => {
+      this.refs = this.refs.filter((r) => r.path !== ref.path);
+      chip.remove();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
