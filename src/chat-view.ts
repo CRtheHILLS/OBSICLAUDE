@@ -204,34 +204,66 @@ export class ChatView extends ItemView {
     this.messages = [];
     this.showWelcome();
 
-    // Drag & drop on the entire panel
-    const oc = container;
-    oc.addEventListener("dragover", (e) => {
+    // Drag & drop: use document-level capture to intercept BEFORE Obsidian's workspace handlers
+    // This is the only reliable way to accept drops in a custom sidebar view
+    const isOverOurPanel = (e: DragEvent): boolean => {
+      const target = e.target as HTMLElement;
+      return !!target?.closest(".oc");
+    };
+
+    this.registerDomEvent(document, "dragover", (e: DragEvent) => {
+      if (!isOverOurPanel(e)) return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+        e.dataTransfer.effectAllowed = "copy";
+      }
       this.chatContainer.addClass("oc-dragover");
-      // Capture Obsidian's internal draggable during dragover
       try {
         const dm = (this.app as any).dragManager;
-        if (dm?.draggable) {
-          this.capturedDraggable = dm.draggable;
-        }
-      } catch (e) {
-        console.debug("OBSICLAUDE: dragManager access failed:", e);
+        if (dm?.draggable) this.capturedDraggable = dm.draggable;
+      } catch (_) { /* ignore */ }
+    }, true);
+
+    this.registerDomEvent(document, "dragenter", (e: DragEvent) => {
+      if (!isOverOurPanel(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+        e.dataTransfer.effectAllowed = "copy";
       }
-    });
-    oc.addEventListener("dragleave", (e) => {
+    }, true);
+
+    this.registerDomEvent(document, "dragleave", (e: DragEvent) => {
+      if (!isOverOurPanel(e)) return;
       const related = e.relatedTarget as Node | null;
-      if (!related || !oc.contains(related)) {
+      if (!related || !this.containerEl.contains(related)) {
         this.chatContainer.removeClass("oc-dragover");
       }
-    });
-    oc.addEventListener("drop", (e) => {
+    }, true);
+
+    this.registerDomEvent(document, "drop", (e: DragEvent) => {
+      if (!isOverOurPanel(e)) return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       this.chatContainer.removeClass("oc-dragover");
       this.handleDrop(e);
-    });
+    }, true);
+
+    // Override Obsidian's native drag handlers on the view
+    (this as any).onDrop = (event: DragEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.chatContainer.removeClass("oc-dragover");
+      this.handleDrop(event);
+    };
+    (this as any).onDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
 
     // Input area
     this.inputContainer = container.createDiv("oc-input-area");

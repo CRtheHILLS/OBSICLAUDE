@@ -849,12 +849,59 @@
   color: var(--text-accent);
 }
 
+/* Ensure our panel always accepts drags - override Obsidian's workspace drag handling */
+.workspace-leaf:has(.oc),
+.workspace-leaf-content:has(.oc),
+.workspace-leaf-content:has(.oc) * {
+  pointer-events: auto !important;
+}
+
+/* Hide Obsidian's tab-split drop overlay on our panel */
+.workspace-leaf:has(.oc) .workspace-drop-overlay {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 /* Drag over highlight */
 .oc-dragover {
-  background: rgba(var(--interactive-accent-rgb, 124, 58, 237), 0.05) !important;
-  outline: 2px dashed var(--interactive-accent);
-  outline-offset: -4px;
+  position: relative;
+  background: rgba(var(--interactive-accent-rgb, 124, 58, 237), 0.08) !important;
+  outline: 2.5px dashed var(--interactive-accent);
+  outline-offset: -6px;
   border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.oc-dragover::after {
+  content: "Drop here to attach";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 12px 24px;
+  background: var(--interactive-accent);
+  color: white;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  animation: oc-drop-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes oc-drop-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.9; }
+}
+
+.oc-dragover .oc-welcome,
+.oc-dragover .oc-msg {
+  opacity: 0.15;
+  filter: blur(2px);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+  pointer-events: none;
 }
 
 /* ============================================================

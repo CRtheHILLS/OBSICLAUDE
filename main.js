@@ -2111,32 +2111,65 @@ var _ChatView = class extends import_obsidian3.ItemView {
     this.chatContainer = container.createDiv("oc-messages");
     this.messages = [];
     this.showWelcome();
-    const oc = container;
-    oc.addEventListener("dragover", (e) => {
+    const isOverOurPanel = (e) => {
+      const target = e.target;
+      return !!(target == null ? void 0 : target.closest(".oc"));
+    };
+    this.registerDomEvent(document, "dragover", (e) => {
+      if (!isOverOurPanel(e))
+        return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+        e.dataTransfer.effectAllowed = "copy";
+      }
       this.chatContainer.addClass("oc-dragover");
       try {
         const dm = this.app.dragManager;
-        if (dm == null ? void 0 : dm.draggable) {
+        if (dm == null ? void 0 : dm.draggable)
           this.capturedDraggable = dm.draggable;
-        }
-      } catch (e2) {
-        console.debug("OBSICLAUDE: dragManager access failed:", e2);
+      } catch (_) {
       }
-    });
-    oc.addEventListener("dragleave", (e) => {
+    }, true);
+    this.registerDomEvent(document, "dragenter", (e) => {
+      if (!isOverOurPanel(e))
+        return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+        e.dataTransfer.effectAllowed = "copy";
+      }
+    }, true);
+    this.registerDomEvent(document, "dragleave", (e) => {
+      if (!isOverOurPanel(e))
+        return;
       const related = e.relatedTarget;
-      if (!related || !oc.contains(related)) {
+      if (!related || !this.containerEl.contains(related)) {
         this.chatContainer.removeClass("oc-dragover");
       }
-    });
-    oc.addEventListener("drop", (e) => {
+    }, true);
+    this.registerDomEvent(document, "drop", (e) => {
+      if (!isOverOurPanel(e))
+        return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       this.chatContainer.removeClass("oc-dragover");
       this.handleDrop(e);
-    });
+    }, true);
+    this.onDrop = (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.chatContainer.removeClass("oc-dragover");
+      this.handleDrop(event);
+    };
+    this.onDragOver = (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.dataTransfer)
+        event.dataTransfer.dropEffect = "copy";
+    };
     this.inputContainer = container.createDiv("oc-input-area");
     this.contextBar = this.inputContainer.createDiv("oc-context-bar");
     this.contextBar.style.display = "none";
