@@ -2,7 +2,7 @@
 // Settings Tab - Plugin Configuration UI
 // ============================================================
 
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ClaudeAssistantPlugin from "./main";
 
 export class ClaudeAssistantSettingTab extends PluginSettingTab {
@@ -14,10 +14,10 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "OBSICLAUDE Settings" });
+    new Setting(containerEl).setName("OBSICLAUDE Settings").setHeading();
 
     // ---- API Configuration ----
-    containerEl.createEl("h3", { text: "API Configuration" });
+    new Setting(containerEl).setName("API Configuration").setHeading();
 
     new Setting(containerEl)
       .setName("API Key")
@@ -66,7 +66,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     // ---- Language & Behavior ----
-    containerEl.createEl("h3", { text: "Language & Behavior" });
+    new Setting(containerEl).setName("Language & Behavior").setHeading();
 
     new Setting(containerEl)
       .setName("Language")
@@ -106,13 +106,12 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       .then((setting) => {
         const textarea = setting.controlEl.querySelector("textarea");
         if (textarea) {
-          textarea.style.width = "100%";
-          textarea.style.height = "100px";
+          textarea.addClass("oc-settings-textarea");
         }
       });
 
     // ---- Vault Configuration ----
-    containerEl.createEl("h3", { text: "Vault Configuration" });
+    new Setting(containerEl).setName("Vault Configuration").setHeading();
 
     new Setting(containerEl)
       .setName("Excluded Folders")
@@ -133,7 +132,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     // ---- Frontmatter Template ----
-    containerEl.createEl("h3", { text: "Frontmatter Template" });
+    new Setting(containerEl).setName("Frontmatter Template").setHeading();
 
     new Setting(containerEl)
       .setName("Default Frontmatter")
@@ -158,14 +157,12 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       .then((setting) => {
         const textarea = setting.controlEl.querySelector("textarea");
         if (textarea) {
-          textarea.style.width = "100%";
-          textarea.style.height = "80px";
-          textarea.style.fontFamily = "monospace";
+          textarea.addClass("oc-settings-textarea", "oc-settings-textarea-mono");
         }
       });
 
     // ---- Data ----
-    containerEl.createEl("h3", { text: "Data" });
+    new Setting(containerEl).setName("Data").setHeading();
 
     new Setting(containerEl)
       .setName("Clear Chat History")
@@ -177,7 +174,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
           .onClick(async () => {
             this.plugin.settings.chatHistory = [];
             await this.plugin.saveSettings();
-            new (await import("obsidian")).Notice("Chat history cleared");
+            new Notice("Chat history cleared");
           })
       );
   }

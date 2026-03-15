@@ -27,20 +27,20 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
-    this.addRibbonIcon("sparkles", "Open OBSICLAUDE", () => {
+    this.addRibbonIcon("sparkles", "Open chat", () => {
       this.activateChatView();
     });
 
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
 
-    // ---- File/Folder context menu: "Send to OBSICLAUDE" ----
+    // ---- File/Folder context menu: "Send to chat" ----
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu: Menu, file) => {
         if (file instanceof TFile) {
           menu.addItem((item) => {
             item
-              .setTitle("Send to OBSICLAUDE")
+              .setTitle("Send to chat")
               .setIcon("bot")
               .onClick(async () => {
                 await this.activateChatView();
@@ -51,7 +51,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
         } else if (file instanceof TFolder) {
           menu.addItem((item) => {
             item
-              .setTitle("Send to OBSICLAUDE")
+              .setTitle("Send to chat")
               .setIcon("bot")
               .onClick(async () => {
                 await this.activateChatView();
@@ -67,13 +67,13 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
     this.addCommand({
       id: "open-chat",
-      name: "Open OBSICLAUDE Chat",
+      name: "Open chat",
       callback: () => this.activateChatView(),
     });
 
     this.addCommand({
       id: "send-active-note",
-      name: "Send active note to OBSICLAUDE",
+      name: "Send active note",
       editorCallback: async (_editor: Editor, view: MarkdownView) => {
         if (!view.file) return;
         await this.activateChatView();

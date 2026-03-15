@@ -2,6 +2,9 @@
    OBSICLAUDE - Minimal Apple-inspired UI
    ============================================================ */
 
+.oc-hidden { display: none !important; }
+.oc-input-reset { height: auto !important; }
+
 .oc {
   display: flex;
   flex-direction: column;
@@ -522,6 +525,7 @@
   line-height: 1.4;
   min-height: 20px;
   max-height: 120px;
+  height: var(--oc-input-h, auto);
   outline: none;
 }
 
@@ -1331,4 +1335,18 @@
 .oc-write-submit-icon svg {
   width: 16px;
   height: 16px;
+}
+
+/* ============================================================
+   Settings Tab — textarea utilities
+   ============================================================ */
+
+.oc-settings-textarea {
+  width: 100%;
+  height: 100px;
+}
+
+.oc-settings-textarea-mono {
+  font-family: monospace;
+  height: 80px;
 }

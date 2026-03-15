@@ -450,35 +450,35 @@ export class VaultTools {
         case "move_note":
           return await this.moveNote(str("from"), str("to"));
         case "list_files":
-          return await this.listFiles(optStr("folder"), optStr("extension"), optBool("recursive"));
+          return this.listFiles(optStr("folder"), optStr("extension"), optBool("recursive"));
         case "create_folder":
           return await this.createFolder(str("path"));
         case "search_notes":
           return await this.searchNotes(str("query"), optStr("searchIn"), optNum("limit"));
         case "get_frontmatter":
-          return await this.getFrontmatter(str("path"));
+          return this.getFrontmatter(str("path"));
         case "set_frontmatter":
           return await this.setFrontmatter(str("path"), obj("fields"));
         case "get_backlinks":
-          return await this.getBacklinks(str("path"));
+          return this.getBacklinks(str("path"));
         case "get_outgoing_links":
-          return await this.getOutgoingLinks(str("path"));
+          return this.getOutgoingLinks(str("path"));
         case "analyze_vault":
-          return await this.analyzeVault();
+          return this.analyzeVault();
         case "find_orphan_notes":
-          return await this.findOrphanNotes();
+          return this.findOrphanNotes();
         case "suggest_links":
           return await this.suggestLinks(str("path"));
         case "batch_frontmatter":
           return await this.batchFrontmatter(str("folder"), obj("fields"), optStr("filter_tag"));
         case "find_duplicate_notes":
-          return await this.findDuplicateNotes(optNum("threshold"));
+          return this.findDuplicateNotes(optNum("threshold"));
         case "get_active_note":
           return this.getActiveNote();
         case "open_note":
           return await this.openNote(str("path"));
         case "get_all_tags":
-          return await this.getAllTags();
+          return this.getAllTags();
         default:
           return JSON.stringify({ error: `Unknown tool: ${name}` });
       }
@@ -592,7 +592,7 @@ export class VaultTools {
 
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
-    await this.app.vault.trash(file, true);
+    await this.app.fileManager.trashFile(file);
     new Notice(`Deleted: ${path}`);
     return JSON.stringify({ success: true, deleted: path });
   }
@@ -617,11 +617,11 @@ export class VaultTools {
     return JSON.stringify({ success: true, from, to: toNormalized });
   }
 
-  private async listFiles(
+  private listFiles(
     folder?: string,
     extension?: string,
     recursive?: boolean
-  ): Promise<string> {
+  ): string {
     const root = folder && folder !== "/" ? folder : "";
     const files: { path: string; type: "file" | "folder"; size?: number }[] =
       [];
@@ -646,7 +646,7 @@ export class VaultTools {
     // Return summary + limited file list to prevent token overflow
     const total = files.length;
     const limited = files.slice(0, 200);
-    const result: any = { folder: root || "/", totalCount: total, files: limited };
+    const result: { folder: string; totalCount: number; files: typeof limited; note?: string } = { folder: root || "/", totalCount: total, files: limited };
     if (total > 200) {
       result.note = `Showing first 200 of ${total} items. Use a more specific folder path to narrow results.`;
     }
@@ -740,7 +740,7 @@ export class VaultTools {
     return JSON.stringify({ query, resultCount: results.length, results });
   }
 
-  private async getFrontmatter(path: string): Promise<string> {
+  private getFrontmatter(path: string): string {
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
@@ -769,7 +769,7 @@ export class VaultTools {
     return JSON.stringify({ success: true, path, updatedFields: Object.keys(fields) });
   }
 
-  private async getBacklinks(path: string): Promise<string> {
+  private getBacklinks(path: string): string {
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
@@ -797,7 +797,7 @@ export class VaultTools {
     });
   }
 
-  private async getOutgoingLinks(path: string): Promise<string> {
+  private getOutgoingLinks(path: string): string {
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
@@ -810,7 +810,7 @@ export class VaultTools {
     return JSON.stringify({ path, links, count: links.length });
   }
 
-  private async analyzeVault(): Promise<string> {
+  private analyzeVault(): string {
     const mdFiles = this.app.vault.getMarkdownFiles();
     const allFiles = this.app.vault.getAllLoadedFiles();
     const folders = allFiles.filter((f) => f instanceof TFolder);
@@ -868,7 +868,7 @@ export class VaultTools {
     return JSON.stringify(analysis);
   }
 
-  private async findOrphanNotes(): Promise<string> {
+  private findOrphanNotes(): string {
     const mdFiles = this.app.vault.getMarkdownFiles();
     const linkedFiles = new Set<string>();
 
@@ -959,7 +959,7 @@ export class VaultTools {
     return JSON.stringify({ success: true, updatedCount: updated });
   }
 
-  private async findDuplicateNotes(threshold?: number): Promise<string> {
+  private findDuplicateNotes(threshold?: number): string {
     const t = threshold || 0.7;
     const mdFiles = this.app.vault.getMarkdownFiles();
     const duplicates: { noteA: string; noteB: string; similarity: number }[] =
@@ -1005,7 +1005,7 @@ export class VaultTools {
     return JSON.stringify({ success: true, opened: file.path });
   }
 
-  private async getAllTags(): Promise<string> {
+  private getAllTags(): string {
     const tagCounts: Record<string, number> = {};
     const mdFiles = this.app.vault.getMarkdownFiles();
 

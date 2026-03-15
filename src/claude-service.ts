@@ -1,5 +1,5 @@
 // ============================================================
-// Claude Service - API Communication + Streaming + Agentic Loop
+// Claude Service - API Communication + Agentic Loop
 // ============================================================
 
 import { requestUrl } from "obsidian";
@@ -8,7 +8,6 @@ import {
   ClaudeRequest,
   ClaudeMessage,
   ClaudeResponse,
-  ClaudeContent,
   ClaudeTextBlock,
   ClaudeToolUseBlock,
   ClaudeToolResultBlock,
@@ -70,7 +69,7 @@ ${this.settings.excludedFolders.join(", ")}`;
   }
 
   /**
-   * Main entry: agentic loop with streaming text output.
+   * Main entry: agentic loop with tool execution.
    */
   async chat(
     conversationMessages: ClaudeMessage[],
@@ -98,24 +97,14 @@ ${this.settings.excludedFolders.join(", ")}`;
         break;
       }
 
-      // Try streaming first, fall back to non-streaming
-      let response: ClaudeResponse;
-      try {
-        response = await this.callAPIStream(messages, tools, (delta) => {
-          fullText += delta;
-          callbacks?.onText?.(fullText);
-        }, callbacks?.signal);
-      } catch (streamErr) {
-        // Fallback to non-streaming if fetch/streaming fails
-        response = await this.callAPI(messages, tools);
-        const textBlocks = response.content
-          .filter((b): b is ClaudeTextBlock => b.type === "text")
-          .map((b) => b.text);
-        const iterText = textBlocks.join("\n");
-        if (iterText) {
-          fullText += iterText;
-          callbacks?.onText?.(fullText);
-        }
+      const response = await this.callAPI(messages, tools);
+      const textBlocks = response.content
+        .filter((b): b is ClaudeTextBlock => b.type === "text")
+        .map((b) => b.text);
+      const iterText = textBlocks.join("\n");
+      if (iterText) {
+        fullText += iterText;
+        callbacks?.onText?.(fullText);
       }
 
       // Done if no tool calls
@@ -178,152 +167,7 @@ ${this.settings.excludedFolders.join(", ")}`;
   }
 
   /**
-   * Streaming API call using fetch + SSE parsing
-   */
-  private async callAPIStream(
-    messages: ClaudeMessage[],
-    tools: ClaudeTool[],
-    onTextDelta: (text: string) => void,
-    signal?: AbortSignal
-  ): Promise<ClaudeResponse> {
-    const body: ClaudeRequest = {
-      model: this.settings.model,
-      max_tokens: this.settings.maxTokens,
-      system: this.buildSystemPrompt(),
-      messages,
-      tools,
-      stream: true,
-    };
-
-    const resp = await fetch(CLAUDE_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.settings.apiKey,
-        "anthropic-version": API_VERSION,
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
-
-    if (!resp.ok) {
-      let msg = `API error: ${resp.status}`;
-      try {
-        const err = await resp.json();
-        msg = err?.error?.message || msg;
-      } catch {
-        // Response body not parseable — use status code message
-      }
-      throw new Error(msg);
-    }
-
-    if (!resp.body) {
-      throw new Error("API response has no readable body");
-    }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const contentBlocks: ClaudeContent[] = [];
-    let curText: { type: "text"; text: string } | null = null;
-    let curTool: {
-      type: "tool_use";
-      id: string;
-      name: string;
-      input: Record<string, unknown>;
-      _json: string;
-    } | null = null;
-    let stopReason = "end_turn";
-    let messageId = "";
-    let usage = { input_tokens: 0, output_tokens: 0 };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (!data || data === "[DONE]") continue;
-
-        try {
-          const evt = JSON.parse(data);
-          switch (evt.type) {
-            case "message_start":
-              messageId = evt.message?.id || "";
-              usage = evt.message?.usage || usage;
-              break;
-
-            case "content_block_start":
-              if (evt.content_block.type === "text") {
-                curText = { type: "text", text: "" };
-              } else if (evt.content_block.type === "tool_use") {
-                curTool = {
-                  type: "tool_use",
-                  id: evt.content_block.id,
-                  name: evt.content_block.name,
-                  input: {},
-                  _json: "",
-                };
-              }
-              break;
-
-            case "content_block_delta":
-              if (evt.delta.type === "text_delta" && curText) {
-                curText.text += evt.delta.text;
-                onTextDelta(evt.delta.text);
-              } else if (
-                evt.delta.type === "input_json_delta" &&
-                curTool
-              ) {
-                curTool._json += evt.delta.partial_json;
-              }
-              break;
-
-            case "content_block_stop":
-              if (curText) {
-                contentBlocks.push(curText);
-                curText = null;
-              } else if (curTool) {
-                try {
-                  curTool.input = JSON.parse(curTool._json || "{}");
-                } catch {
-                  curTool.input = {};
-                }
-                const { _json, ...clean } = curTool;
-                contentBlocks.push(clean as ClaudeToolUseBlock);
-                curTool = null;
-              }
-              break;
-
-            case "message_delta":
-              stopReason = evt.delta?.stop_reason || stopReason;
-              if (evt.usage) usage = { ...usage, ...evt.usage };
-              break;
-          }
-        } catch (e) {
-          console.warn("OBSICLAUDE: Failed to parse SSE event:", e);
-        }
-      }
-    }
-
-    return {
-      id: messageId,
-      type: "message",
-      role: "assistant",
-      content: contentBlocks,
-      stop_reason: stopReason as ClaudeResponse["stop_reason"],
-      usage,
-    };
-  }
-
-  /**
-   * Non-streaming fallback using Obsidian's requestUrl
+   * Non-streaming API call using Obsidian's requestUrl
    */
   private async callAPI(
     messages: ClaudeMessage[],

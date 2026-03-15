@@ -13,6 +13,8 @@ import {
   TFile,
   TFolder,
   TAbstractFile,
+  Menu,
+  App,
 } from "obsidian";
 import { ChatMessage, ClaudeMessage, ToolCallInfo } from "./types";
 import { ClaudeService } from "./claude-service";
@@ -25,6 +27,27 @@ interface AttachedContext {
   type: "file" | "folder";
   path: string;
   name: string;
+}
+
+interface ObsidianDragManager {
+  draggable?: {
+    files?: { path: string }[];
+    file?: { path: string };
+    source?: { path: string };
+  };
+}
+
+interface ItemViewWithDrag extends ItemView {
+  onDrop?(event: DragEvent): void;
+  onDragOver?(event: DragEvent): void;
+}
+
+interface ProcessingState {
+  interval: ReturnType<typeof setInterval>;
+  label: HTMLElement;
+  details: HTMLElement;
+  actionCount: number;
+  modeOverride: boolean;
 }
 
 const MODELS: { id: string; label: string }[] = [
@@ -139,10 +162,11 @@ export class ChatView extends ItemView {
   private messages: ChatMessage[] = [];
   private claudeService: ClaudeService;
   private attachedContexts: AttachedContext[] = [];
-  private capturedDraggable: any = null;
+  private capturedDraggable: { files?: { path: string }[]; file?: { path: string }; source?: { path: string } } | null = null;
   private abortController: AbortController | null = null;
   private slashMenu: HTMLElement | null = null;
   private isComposing = false;
+  private processingStates = new WeakMap<HTMLElement, ProcessingState>();
 
   constructor(leaf: WorkspaceLeaf, private plugin: ClaudeAssistantPlugin) {
     super(leaf);
@@ -161,7 +185,7 @@ export class ChatView extends ItemView {
     return "sparkles";
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("oc");
@@ -221,9 +245,9 @@ export class ChatView extends ItemView {
       }
       this.chatContainer.addClass("oc-dragover");
       try {
-        const dm = (this.app as any).dragManager;
+        const dm = (this.app as unknown as { dragManager?: ObsidianDragManager }).dragManager;
         if (dm?.draggable) this.capturedDraggable = dm.draggable;
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     }, true);
 
     this.registerDomEvent(document, "dragenter", (e: DragEvent) => {
@@ -253,13 +277,13 @@ export class ChatView extends ItemView {
     }, true);
 
     // Override Obsidian's native drag handlers on the view
-    (this as any).onDrop = (event: DragEvent) => {
+    (this as unknown as ItemViewWithDrag).onDrop = (event: DragEvent) => {
       event.preventDefault();
       event.stopImmediatePropagation();
       this.chatContainer.removeClass("oc-dragover");
       this.handleDrop(event);
     };
-    (this as any).onDragOver = (event: DragEvent) => {
+    (this as unknown as ItemViewWithDrag).onDragOver = (event: DragEvent) => {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
@@ -270,7 +294,7 @@ export class ChatView extends ItemView {
 
     // Context bar (shows attached files/folders)
     this.contextBar = this.inputContainer.createDiv("oc-context-bar");
-    this.contextBar.style.display = "none";
+    this.contextBar.addClass("oc-hidden");
 
     const inputRow = this.inputContainer.createDiv("oc-input-row");
 
@@ -280,9 +304,7 @@ export class ChatView extends ItemView {
     });
 
     this.inputEl.addEventListener("input", () => {
-      this.inputEl.style.height = "auto";
-      this.inputEl.style.height =
-        Math.min(this.inputEl.scrollHeight, 120) + "px";
+      this.adjustInputHeight();
       // Slash command menu
       this.handleSlashInput();
     });
@@ -324,7 +346,7 @@ export class ChatView extends ItemView {
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        this.handleSend();
+        void this.handleSend();
       }
     });
 
@@ -337,9 +359,11 @@ export class ChatView extends ItemView {
       if (this.isProcessing) {
         this.handleStop();
       } else {
-        this.handleSend();
+        void this.handleSend();
       }
     });
+
+    return Promise.resolve();
   }
 
   async onClose(): Promise<void> {
@@ -349,11 +373,22 @@ export class ChatView extends ItemView {
       this.abortController = null;
     }
     if (this.activeProcessingEl) {
-      const interval = (this.activeProcessingEl as any)?._interval;
-      if (interval) clearInterval(interval);
+      const state = this.processingStates.get(this.activeProcessingEl);
+      if (state) clearInterval(state.interval);
       this.activeProcessingEl = null;
     }
     await this.saveHistory();
+  }
+
+  // ============================================================
+  // INPUT HEIGHT
+  // ============================================================
+
+  private adjustInputHeight(): void {
+    this.inputEl.addClass("oc-input-reset");
+    const h = Math.min(this.inputEl.scrollHeight, 120);
+    this.inputEl.removeClass("oc-input-reset");
+    this.inputEl.setCssProps({ "--oc-input-h": h + "px" });
   }
 
   // ============================================================
@@ -361,21 +396,21 @@ export class ChatView extends ItemView {
   // ============================================================
 
   private showModelMenu(e: MouseEvent): void {
-    const menu = new (require("obsidian") as typeof import("obsidian")).Menu();
+    const menu = new Menu();
     for (const m of MODELS) {
       menu.addItem((item) => {
         item.setTitle(m.label);
         if (this.plugin.settings.model === m.id) {
           item.setIcon("check");
         }
-        item.onClick(async () => {
-          this.plugin.settings.model = m.id as typeof this.plugin.settings.model;
-          await this.plugin.saveSettings();
-          this.modelBtn.setText(m.label);
-          this.plugin.claudeService = new (
-            await import("./claude-service")
-          ).ClaudeService(this.plugin.settings, this.plugin.vaultTools);
-          this.claudeService = this.plugin.claudeService;
+        item.onClick(() => {
+          void (async () => {
+            this.plugin.settings.model = m.id as typeof this.plugin.settings.model;
+            await this.plugin.saveSettings();
+            this.modelBtn.setText(m.label);
+            this.plugin.claudeService = new ClaudeService(this.plugin.settings, this.plugin.vaultTools);
+            this.claudeService = this.plugin.claudeService;
+          })();
         });
       });
     }
@@ -394,8 +429,8 @@ export class ChatView extends ItemView {
       this.abortController = null;
       // Clean up processing indicator interval to prevent memory leak
       if (this.activeProcessingEl) {
-        const interval = (this.activeProcessingEl as any)?._interval;
-        if (interval) clearInterval(interval);
+        const state = this.processingStates.get(this.activeProcessingEl);
+        if (state) clearInterval(state.interval);
         this.activeProcessingEl = null;
       }
       this.pendingFollowUps = [];
@@ -509,7 +544,7 @@ export class ChatView extends ItemView {
       );
     } else {
       this.inputEl.value = cmd.prompt;
-      this.handleSend();
+      void this.handleSend();
     }
   }
 
@@ -538,7 +573,9 @@ export class ChatView extends ItemView {
     if (this.isProcessing) {
       this.pendingFollowUps.push(text);
       this.inputEl.value = "";
-      this.inputEl.style.height = "auto";
+      this.inputEl.addClass("oc-input-reset");
+      this.inputEl.setCssProps({ "--oc-input-h": "auto" });
+      this.inputEl.removeClass("oc-input-reset");
 
       // Show queued message immediately in chat
       const queuedMsg: ChatMessage = {
@@ -554,7 +591,9 @@ export class ChatView extends ItemView {
     }
 
     this.inputEl.value = "";
-    this.inputEl.style.height = "auto";
+    this.inputEl.addClass("oc-input-reset");
+    this.inputEl.setCssProps({ "--oc-input-h": "auto" });
+    this.inputEl.removeClass("oc-input-reset");
     this.abortController = new AbortController();
     this.setProcessing(true);
 
@@ -615,10 +654,10 @@ export class ChatView extends ItemView {
           // Update indicator to show writing mode on first text chunk
           if (!streamStarted) {
             streamStarted = true;
-            const lbl = (procEl as any)?._label as HTMLElement | undefined;
-            if (lbl) {
-              lbl.textContent = "Writing";
-              (procEl as any)._modeOverride = true;
+            const state = this.processingStates.get(procEl);
+            if (state) {
+              state.label.textContent = "Writing";
+              state.modeOverride = true;
             }
           }
           // Debounced markdown rendering during streaming
@@ -627,7 +666,7 @@ export class ChatView extends ItemView {
             if (text !== lastRenderedText) {
               lastRenderedText = text;
               contentEl.empty();
-              MarkdownRenderer.render(this.app, text, contentEl, "", this);
+              void MarkdownRenderer.render(this.app, text, contentEl, "", this);
               this.scrollToBottom();
             }
           }, 80);
@@ -673,11 +712,11 @@ export class ChatView extends ItemView {
 
         const details = responseBody.createDiv("oc-tool-details");
         responseBody.insertBefore(details, contentEl);
-        details.style.display = "none";
+        details.addClass("oc-hidden");
 
         toolBadge.addEventListener("click", () => {
-          const show = details.style.display === "none";
-          details.style.display = show ? "block" : "none";
+          const show = details.hasClass("oc-hidden");
+          details.toggleClass("oc-hidden", !show);
           toolBadge.toggleClass("is-open", show);
         });
 
@@ -737,8 +776,8 @@ export class ChatView extends ItemView {
     }
 
     // Cleanup processing indicator interval
-    const interval = (procEl as any)?._interval;
-    if (interval) clearInterval(interval);
+    const state = this.processingStates.get(procEl);
+    if (state) clearInterval(state.interval);
     this.activeProcessingEl = null;
 
     this.setProcessing(false);
@@ -790,47 +829,52 @@ export class ChatView extends ItemView {
 
     // Details panel (hidden by default)
     const detailsPanel = el.createDiv("oc-processing-details");
-    detailsPanel.style.display = "none";
+    detailsPanel.addClass("oc-hidden");
 
     statusRow.addEventListener("click", () => {
-      const show = detailsPanel.style.display === "none";
-      detailsPanel.style.display = show ? "block" : "none";
+      const show = detailsPanel.hasClass("oc-hidden");
+      detailsPanel.toggleClass("oc-hidden", !show);
       statusRow.toggleClass("is-expanded", show);
     });
 
     // Cycle through fun phases + update elapsed time
     let phaseIdx = 0;
     const startTime = Date.now();
-    const interval = setInterval(() => {
-      // Update elapsed time
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      timeBadge.textContent = elapsed < 60
-        ? `${elapsed}s`
-        : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 
-      // Cycle phase text (only if still in thinking mode, not tool/writing mode)
-      if (!(el as any)._modeOverride) {
-        phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
-        label.textContent = THINKING_PHASES[phaseIdx];
-      }
-    }, 1000);
-    (el as any)._interval = interval;
-    (el as any)._label = label;
-    (el as any)._details = detailsPanel;
-    (el as any)._actionCount = 0;
-    (el as any)._modeOverride = false;
+    const procState: ProcessingState = {
+      interval: setInterval(() => {
+        // Update elapsed time
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        timeBadge.textContent = elapsed < 60
+          ? `${elapsed}s`
+          : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+        // Cycle phase text (only if still in thinking mode, not tool/writing mode)
+        const currentState = this.processingStates.get(el);
+        if (currentState && !currentState.modeOverride) {
+          phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
+          label.textContent = THINKING_PHASES[phaseIdx];
+        }
+      }, 1000),
+      label,
+      details: detailsPanel,
+      actionCount: 0,
+      modeOverride: false,
+    };
+
+    this.processingStates.set(el, procState);
 
     this.scrollToBottom();
     return el;
   }
 
   private updateProcessingLabel(procEl: HTMLElement, text: string): void {
-    const label = (procEl as any)?._label as HTMLElement | undefined;
-    if (!label) return;
-    (procEl as any)._actionCount = ((procEl as any)._actionCount || 0) + 1;
-    const count = (procEl as any)._actionCount;
-    label.textContent = `${text}... (action ${count})`;
-    (procEl as any)._modeOverride = true;
+    const state = this.processingStates.get(procEl);
+    if (!state) return;
+    state.actionCount = (state.actionCount || 0) + 1;
+    const count = state.actionCount;
+    state.label.textContent = `${text}... (action ${count})`;
+    state.modeOverride = true;
   }
 
   private addProcessingStep(
@@ -838,8 +882,9 @@ export class ChatView extends ItemView {
     label: string,
     status: "running" | "done"
   ): void {
-    const details = (procEl as any)?._details as HTMLElement | undefined;
-    if (!details) return;
+    const state = this.processingStates.get(procEl);
+    if (!state) return;
+    const details = state.details;
 
     const step = details.createDiv("oc-processing-step");
     step.dataset.label = label;
@@ -856,8 +901,9 @@ export class ChatView extends ItemView {
   }
 
   private markProcessingStepDone(procEl: HTMLElement, label: string): void {
-    const details = (procEl as any)?._details as HTMLElement | undefined;
-    if (!details) return;
+    const state = this.processingStates.get(procEl);
+    if (!state) return;
+    const details = state.details;
 
     const steps = details.querySelectorAll(".oc-processing-step");
     for (const step of Array.from(steps)) {
@@ -893,11 +939,11 @@ export class ChatView extends ItemView {
       });
 
       const details = body.createDiv("oc-tool-details");
-      details.style.display = "none";
+      details.addClass("oc-hidden");
 
       toolBadge.addEventListener("click", () => {
-        const show = details.style.display === "none";
-        details.style.display = show ? "block" : "none";
+        const show = details.hasClass("oc-hidden");
+        details.toggleClass("oc-hidden", !show);
         toolBadge.toggleClass("is-open", show);
       });
 
@@ -937,7 +983,7 @@ export class ChatView extends ItemView {
 
     // SVG mascot
     const mascotWrap = w.createDiv("oc-mascot-wrap");
-    mascotWrap.innerHTML = `<svg class="oc-mascot" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+    const svgStr = `<svg class="oc-mascot" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="100" cy="100" r="80" fill="url(#glow)" opacity="0.15"/>
       <path d="M100 30 L145 75 L130 160 L70 160 L55 75 Z" fill="url(#crystal)" stroke="url(#crystalStroke)" stroke-width="2.5" stroke-linejoin="round"/>
       <path d="M100 30 L100 160" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
@@ -989,6 +1035,9 @@ export class ChatView extends ItemView {
         </radialGradient>
       </defs>
     </svg>`;
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgStr, "image/svg+xml");
+    mascotWrap.appendChild(mascotWrap.doc.importNode(svgDoc.documentElement, true));
 
     // Logo
     const logo = w.createDiv("oc-logo");
@@ -1019,7 +1068,7 @@ export class ChatView extends ItemView {
     writeBtn.createDiv("oc-write-vine");
     const writeIcon = writeBtn.createDiv("oc-action-icon");
     setIcon(writeIcon, "wand-2");
-    writeBtn.createSpan({ text: "Magic Write", cls: "oc-action-text" });
+    writeBtn.createSpan({ text: "Magic write", cls: "oc-action-text" });
     writeBtn.addEventListener("click", () => {
       new WriteModal(this, this.plugin).open();
     });
@@ -1050,7 +1099,7 @@ export class ChatView extends ItemView {
         "",
         "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different.",
       ].join("\n");
-      this.handleSend();
+      void this.handleSend();
     });
 
     // Drop hint with animated arrow
@@ -1072,7 +1121,7 @@ export class ChatView extends ItemView {
       const d = this.capturedDraggable;
       this.capturedDraggable = null;
 
-      const candidates: any[] = [];
+      const candidates: { path: string }[] = [];
       if (d.files && Array.isArray(d.files)) candidates.push(...d.files);
       if (d.file) candidates.push(d.file);
       // Some versions use 'source'
@@ -1105,7 +1154,7 @@ export class ChatView extends ItemView {
 
     // Method 2: Also try the drag manager at drop time (may still be set)
     try {
-      const dm = (this.app as any).dragManager;
+      const dm = (this.app as unknown as { dragManager?: ObsidianDragManager }).dragManager;
       if (dm?.draggable) {
         const d = dm.draggable;
         const files = d.files || (d.file ? [d.file] : []);
@@ -1254,10 +1303,10 @@ export class ChatView extends ItemView {
   private renderContextBar(): void {
     this.contextBar.empty();
     if (this.attachedContexts.length === 0) {
-      this.contextBar.style.display = "none";
+      this.contextBar.addClass("oc-hidden");
       return;
     }
-    this.contextBar.style.display = "flex";
+    this.contextBar.removeClass("oc-hidden");
 
     for (const ctx of this.attachedContexts) {
       const chip = this.contextBar.createDiv("oc-context-chip");
@@ -1474,7 +1523,7 @@ const WRITING_STYLES: WriteStyleConfig[] = [
   },
   {
     id: "blog",
-    label: "Blog Post",
+    label: "Blog post",
     icon: "pen-line",
     desc: "Article with hook & sections",
     frontmatter: "tags, date, author, status: draft, category, description (1-line summary for SEO)",
@@ -1492,7 +1541,7 @@ const WRITING_STYLES: WriteStyleConfig[] = [
   },
   {
     id: "meeting",
-    label: "Meeting Notes",
+    label: "Meeting notes",
     icon: "users",
     desc: "Agenda & action items",
     frontmatter: "tags: [meeting], date, attendees: [], status: actionable",
@@ -1548,7 +1597,7 @@ class FileFolderSuggestModal extends FuzzySuggestModal<TAbstractFile> {
   private items: TAbstractFile[];
   private onChoose: (item: TAbstractFile) => void;
 
-  constructor(app: any, items: TAbstractFile[], onChoose: (item: TAbstractFile) => void) {
+  constructor(app: App, items: TAbstractFile[], onChoose: (item: TAbstractFile) => void) {
     super(app);
     this.items = items;
     this.onChoose = onChoose;
@@ -1590,7 +1639,7 @@ class WriteModal extends Modal {
     const header = contentEl.createDiv("oc-write-header");
     const titleIcon = header.createDiv("oc-write-header-icon");
     setIcon(titleIcon, "wand-2");
-    header.createEl("h2", { text: "Magic Write", cls: "oc-write-title" });
+    header.createEl("h2", { text: "Magic write", cls: "oc-write-title" });
     header.createEl("p", { text: "Describe what you want. Claude writes it.", cls: "oc-write-subtitle" });
 
     // Main textarea
@@ -1749,7 +1798,7 @@ class WriteModal extends Modal {
         this.chatView.addContext(ref);
       }
 
-      this.chatView.sendMessage(prompt);
+      void this.chatView.sendMessage(prompt);
     });
 
     setTimeout(() => topicArea.focus(), 50);
