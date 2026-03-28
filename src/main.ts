@@ -22,13 +22,19 @@ export default class ClaudeAssistantPlugin extends Plugin {
       this.settings = { ...DEFAULT_SETTINGS };
     }
 
+    // Ensure the config directory is always excluded
+    const configDir = this.app.vault.configDir;
+    if (!this.settings.excludedFolders.includes(configDir)) {
+      this.settings.excludedFolders.unshift(configDir);
+    }
+
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
     this.addRibbonIcon("sparkles", "Open chat", () => {
-      this.activateChatView();
+      void this.activateChatView();
     });
 
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
@@ -68,7 +74,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
     this.addCommand({
       id: "open-chat",
       name: "Open chat",
-      callback: () => this.activateChatView(),
+      callback: () => { void this.activateChatView(); },
     });
 
     this.addCommand({

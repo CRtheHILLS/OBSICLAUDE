@@ -132,7 +132,7 @@ ${this.settings.excludedFolders.join(", ")}`;
 
         let result = await this.vaultTools.executeTool(
           toolUse.name,
-          toolUse.input as Record<string, unknown>
+          toolUse.input
         );
 
         // Truncate large tool results to prevent token overflow
@@ -143,7 +143,7 @@ ${this.settings.excludedFolders.join(", ")}`;
 
         const tc: ToolCallInfo = {
           toolName: toolUse.name,
-          input: toolUse.input as Record<string, unknown>,
+          input: toolUse.input,
           result,
         };
         allToolCalls.push(tc);
@@ -213,9 +213,9 @@ ${this.settings.excludedFolders.join(", ")}`;
       if (typeof msg.content === "string") return msg.content.length;
       if (Array.isArray(msg.content)) {
         return msg.content.reduce((sum, block) => {
-          if (block.type === "text") return sum + (block as ClaudeTextBlock).text.length;
-          if (block.type === "tool_use") return sum + JSON.stringify((block as ClaudeToolUseBlock).input).length + 200;
-          if (block.type === "tool_result") return sum + ((block as ClaudeToolResultBlock).content?.length || 0);
+          if (block.type === "text") return sum + block.text.length;
+          if (block.type === "tool_use") return sum + JSON.stringify(block.input).length + 200;
+          if (block.type === "tool_result") return sum + (block.content?.length || 0);
           return sum + 200;
         }, 0);
       }
@@ -234,9 +234,8 @@ ${this.settings.excludedFolders.join(", ")}`;
       if (Array.isArray(msg.content)) {
         const newContent = msg.content.map((block) => {
           if (block.type === "tool_result") {
-            const tb = block as ClaudeToolResultBlock;
-            if (tb.content && tb.content.length > MAX_TOOL_RESULT_CHARS) {
-              return { ...tb, content: tb.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n...(truncated)" };
+            if (block.content && block.content.length > MAX_TOOL_RESULT_CHARS) {
+              return { ...block, content: block.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n...(truncated)" };
             }
           }
           return block;

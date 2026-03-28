@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS: ClaudeAssistantSettings = {
   language: "en",
   maxTokens: 4096,
   systemPrompt: "",
-  excludedFolders: [".obsidian", ".trash"],
+  excludedFolders: [".trash"],
   frontmatterTemplate: {
     created: "{{date}}",
     tags: "[]",

@@ -211,7 +211,7 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "Help" },
     });
     setIcon(helpBtn, "help-circle");
-    helpBtn.addEventListener("click", () => this.showHelp());
+    helpBtn.addEventListener("click", () => { void this.showHelp(); });
 
     // New chat button
     const clearBtn = actions.createEl("button", {
@@ -219,7 +219,7 @@ export class ChatView extends ItemView {
       attr: { "aria-label": "New chat" },
     });
     setIcon(clearBtn, "plus");
-    clearBtn.addEventListener("click", () => this.clearChat());
+    clearBtn.addEventListener("click", () => { void this.clearChat(); });
 
     // Chat messages area
     this.chatContainer = container.createDiv("oc-messages");
@@ -530,7 +530,7 @@ export class ChatView extends ItemView {
   private applySlashCommand(cmd: SlashCommand): void {
     this.dismissSlashMenu();
     if (cmd.prompt === "__HELP__") {
-      this.showHelp();
+      void this.showHelp();
       this.inputEl.value = "";
       return;
     }
@@ -1215,7 +1215,7 @@ export class ChatView extends ItemView {
 
     if (!resolved) {
       new Notice(
-        "Could not identify items. Try right-click → Send to OBSICLAUDE."
+        "Could not identify items. Try right-click → Send to chat."
       );
     }
   }
@@ -1345,9 +1345,8 @@ export class ChatView extends ItemView {
     setIcon(copyBtn, "copy");
     copyBtn.createSpan({ text: "Copy", cls: "oc-copy-label" });
 
-    copyBtn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(text);
+    copyBtn.addEventListener("click", () => {
+      void navigator.clipboard.writeText(text).then(() => {
         copyBtn.empty();
         setIcon(copyBtn, "check");
         copyBtn.createSpan({ text: "Copied!", cls: "oc-copy-label" });
@@ -1356,9 +1355,9 @@ export class ChatView extends ItemView {
           setIcon(copyBtn, "copy");
           copyBtn.createSpan({ text: "Copy", cls: "oc-copy-label" });
         }, 2000);
-      } catch {
+      }).catch(() => {
         new Notice("Failed to copy");
-      }
+      });
     });
   }
 
@@ -1378,7 +1377,7 @@ export class ChatView extends ItemView {
       return; // Toggle off
     }
 
-    const lang = this.plugin.settings.language as "en" | "ko" | "ja" | "zh" | "es" | "de" | "fr";
+    const lang = this.plugin.settings.language;
     const help = getHelpContent(lang);
 
     const helpEl = this.chatContainer.createDiv("oc-help");

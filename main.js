@@ -36,7 +36,7 @@ var DEFAULT_SETTINGS = {
   language: "en",
   maxTokens: 4096,
   systemPrompt: "",
-  excludedFolders: [".obsidian", ".trash"],
+  excludedFolders: [".trash"],
   frontmatterTemplate: {
     created: "{{date}}",
     tags: "[]"
@@ -982,7 +982,7 @@ ${content}`;
         yaml += `${key}: ${JSON.stringify(value)}
 `;
       } else {
-        yaml += `${key}: ${value}
+        yaml += `${key}: ${String(value)}
 `;
       }
     }
@@ -1200,9 +1200,8 @@ ${this.settings.excludedFolders.join(", ")}`;
       if (Array.isArray(msg.content)) {
         const newContent = msg.content.map((block) => {
           if (block.type === "tool_result") {
-            const tb = block;
-            if (tb.content && tb.content.length > MAX_TOOL_RESULT_CHARS) {
-              return { ...tb, content: tb.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n...(truncated)" };
+            if (block.content && block.content.length > MAX_TOOL_RESULT_CHARS) {
+              return { ...block, content: block.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n...(truncated)" };
             }
           }
           return block;
@@ -1947,13 +1946,17 @@ var _ChatView = class extends import_obsidian3.ItemView {
       attr: { "aria-label": "Help" }
     });
     (0, import_obsidian3.setIcon)(helpBtn, "help-circle");
-    helpBtn.addEventListener("click", () => this.showHelp());
+    helpBtn.addEventListener("click", () => {
+      void this.showHelp();
+    });
     const clearBtn = actions.createEl("button", {
       cls: "oc-icon-btn",
       attr: { "aria-label": "New chat" }
     });
     (0, import_obsidian3.setIcon)(clearBtn, "plus");
-    clearBtn.addEventListener("click", () => this.clearChat());
+    clearBtn.addEventListener("click", () => {
+      void this.clearChat();
+    });
     this.chatContainer = container.createDiv("oc-messages");
     this.messages = [];
     this.showWelcome();
@@ -2212,7 +2215,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
   applySlashCommand(cmd) {
     this.dismissSlashMenu();
     if (cmd.prompt === "__HELP__") {
-      this.showHelp();
+      void this.showHelp();
       this.inputEl.value = "";
       return;
     }
@@ -2768,7 +2771,7 @@ ${text}`;
     }
     if (!resolved) {
       new import_obsidian3.Notice(
-        "Could not identify items. Try right-click \u2192 Send to OBSICLAUDE."
+        "Could not identify items. Try right-click \u2192 Send to chat."
       );
     }
   }
@@ -2871,9 +2874,8 @@ ${text}`;
     });
     (0, import_obsidian3.setIcon)(copyBtn, "copy");
     copyBtn.createSpan({ text: "Copy", cls: "oc-copy-label" });
-    copyBtn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(text);
+    copyBtn.addEventListener("click", () => {
+      void navigator.clipboard.writeText(text).then(() => {
         copyBtn.empty();
         (0, import_obsidian3.setIcon)(copyBtn, "check");
         copyBtn.createSpan({ text: "Copied!", cls: "oc-copy-label" });
@@ -2882,9 +2884,9 @@ ${text}`;
           (0, import_obsidian3.setIcon)(copyBtn, "copy");
           copyBtn.createSpan({ text: "Copy", cls: "oc-copy-label" });
         }, 2e3);
-      } catch (e) {
+      }).catch(() => {
         new import_obsidian3.Notice("Failed to copy");
-      }
+      });
     });
   }
   // ============================================================
@@ -3304,9 +3306,9 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian4.Setting(containerEl).setName("OBSICLAUDE Settings").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("API Configuration").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("API Key").setDesc("Your Anthropic API key. Get one at console.anthropic.com").addText(
+    new import_obsidian4.Setting(containerEl).setName("General").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("API configuration").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("API key").setDesc("Your Anthropic API key. Get one at console.anthropic.com").addText(
       (text) => text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
         this.plugin.settings.apiKey = value;
         await this.plugin.saveSettings();
@@ -3322,20 +3324,20 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Max Tokens").setDesc("Maximum tokens in Claude's response (higher = longer responses)").addSlider(
+    new import_obsidian4.Setting(containerEl).setName("Max tokens").setDesc("Maximum tokens in Claude's response (higher = longer responses)").addSlider(
       (slider) => slider.setLimits(1024, 8192, 512).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange(async (value) => {
         this.plugin.settings.maxTokens = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Language & Behavior").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Language & behavior").setHeading();
     new import_obsidian4.Setting(containerEl).setName("Language").setDesc("Language for the Help guide and UI. Claude automatically responds in the language you write in.").addDropdown(
       (dropdown) => dropdown.addOption("en", "English").addOption("ko", "\uD55C\uAD6D\uC5B4").addOption("ja", "\u65E5\u672C\u8A9E").addOption("de", "Deutsch").addOption("zh", "\u4E2D\u6587").addOption("es", "Espa\xF1ol").addOption("fr", "Fran\xE7ais").setValue(this.plugin.settings.language).onChange(async (value) => {
         this.plugin.settings.language = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Custom System Prompt").setDesc(
+    new import_obsidian4.Setting(containerEl).setName("Custom system prompt").setDesc(
       "Additional instructions for Claude. Appended to the default system prompt."
     ).addTextArea(
       (text) => text.setPlaceholder(
@@ -3350,17 +3352,17 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
         textarea.addClass("oc-settings-textarea");
       }
     });
-    new import_obsidian4.Setting(containerEl).setName("Vault Configuration").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("Excluded Folders").setDesc(
-      "Folders that Claude should not modify (comma-separated). e.g. .obsidian, .trash, templates"
+    new import_obsidian4.Setting(containerEl).setName("Vault configuration").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Excluded folders").setDesc(
+      "Folders that Claude should not modify (comma-separated). The config folder and .trash are excluded by default."
     ).addText(
-      (text) => text.setPlaceholder(".obsidian, .trash").setValue(this.plugin.settings.excludedFolders.join(", ")).onChange(async (value) => {
+      (text) => text.setPlaceholder("templates, archive").setValue(this.plugin.settings.excludedFolders.join(", ")).onChange(async (value) => {
         this.plugin.settings.excludedFolders = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Frontmatter Template").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("Default Frontmatter").setDesc(
+    new import_obsidian4.Setting(containerEl).setName("Frontmatter template").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Default frontmatter").setDesc(
       'JSON template for new notes. Use {{date}} for current date. e.g. {"created": "{{date}}", "tags": []}'
     ).addTextArea(
       (text) => text.setPlaceholder('{"created": "{{date}}", "tags": []}').setValue(
@@ -3379,7 +3381,7 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
       }
     });
     new import_obsidian4.Setting(containerEl).setName("Data").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("Clear Chat History").setDesc("Remove all saved chat messages").addButton(
+    new import_obsidian4.Setting(containerEl).setName("Clear chat history").setDesc("Remove all saved chat messages").addButton(
       (btn) => btn.setButtonText("Clear").setWarning().onClick(async () => {
         this.plugin.settings.chatHistory = [];
         await this.plugin.saveSettings();
@@ -3398,11 +3400,15 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
       console.error("OBSICLAUDE: Failed to load settings, using defaults:", e);
       this.settings = { ...DEFAULT_SETTINGS };
     }
+    const configDir = this.app.vault.configDir;
+    if (!this.settings.excludedFolders.includes(configDir)) {
+      this.settings.excludedFolders.unshift(configDir);
+    }
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
     this.addRibbonIcon("sparkles", "Open chat", () => {
-      this.activateChatView();
+      void this.activateChatView();
     });
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
     this.registerEvent(
@@ -3431,7 +3437,9 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
     this.addCommand({
       id: "open-chat",
       name: "Open chat",
-      callback: () => this.activateChatView()
+      callback: () => {
+        void this.activateChatView();
+      }
     });
     this.addCommand({
       id: "send-active-note",

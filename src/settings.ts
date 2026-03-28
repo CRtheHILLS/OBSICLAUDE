@@ -14,13 +14,13 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("OBSICLAUDE Settings").setHeading();
+    new Setting(containerEl).setName("General").setHeading();
 
     // ---- API Configuration ----
-    new Setting(containerEl).setName("API Configuration").setHeading();
+    new Setting(containerEl).setName("API configuration").setHeading();
 
     new Setting(containerEl)
-      .setName("API Key")
+      .setName("API key")
       .setDesc("Your Anthropic API key. Get one at console.anthropic.com")
       .addText((text) =>
         text
@@ -52,7 +52,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Max Tokens")
+      .setName("Max tokens")
       .setDesc("Maximum tokens in Claude's response (higher = longer responses)")
       .addSlider((slider) =>
         slider
@@ -66,7 +66,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     // ---- Language & Behavior ----
-    new Setting(containerEl).setName("Language & Behavior").setHeading();
+    new Setting(containerEl).setName("Language & behavior").setHeading();
 
     new Setting(containerEl)
       .setName("Language")
@@ -88,7 +88,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Custom System Prompt")
+      .setName("Custom system prompt")
       .setDesc(
         "Additional instructions for Claude. Appended to the default system prompt."
       )
@@ -111,16 +111,16 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       });
 
     // ---- Vault Configuration ----
-    new Setting(containerEl).setName("Vault Configuration").setHeading();
+    new Setting(containerEl).setName("Vault configuration").setHeading();
 
     new Setting(containerEl)
-      .setName("Excluded Folders")
+      .setName("Excluded folders")
       .setDesc(
-        "Folders that Claude should not modify (comma-separated). e.g. .obsidian, .trash, templates"
+        "Folders that Claude should not modify (comma-separated). The config folder and .trash are excluded by default."
       )
       .addText((text) =>
         text
-          .setPlaceholder(".obsidian, .trash")
+          .setPlaceholder("templates, archive")
           .setValue(this.plugin.settings.excludedFolders.join(", "))
           .onChange(async (value) => {
             this.plugin.settings.excludedFolders = value
@@ -132,10 +132,10 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       );
 
     // ---- Frontmatter Template ----
-    new Setting(containerEl).setName("Frontmatter Template").setHeading();
+    new Setting(containerEl).setName("Frontmatter template").setHeading();
 
     new Setting(containerEl)
-      .setName("Default Frontmatter")
+      .setName("Default frontmatter")
       .setDesc(
         'JSON template for new notes. Use {{date}} for current date. e.g. {"created": "{{date}}", "tags": []}'
       )
@@ -165,7 +165,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Data").setHeading();
 
     new Setting(containerEl)
-      .setName("Clear Chat History")
+      .setName("Clear chat history")
       .setDesc("Remove all saved chat messages")
       .addButton((btn) =>
         btn

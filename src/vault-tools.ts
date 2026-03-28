@@ -1069,7 +1069,7 @@ export class VaultTools {
       } else if (typeof value === "object" && value !== null) {
         yaml += `${key}: ${JSON.stringify(value)}\n`;
       } else {
-        yaml += `${key}: ${value}\n`;
+        yaml += `${key}: ${String(value)}\n`;
       }
     }
     return yaml;
