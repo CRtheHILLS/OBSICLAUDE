@@ -3647,7 +3647,6 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian4.Setting(containerEl).setName("General").setHeading();
     new import_obsidian4.Setting(containerEl).setName("API configuration").setHeading();
     new import_obsidian4.Setting(containerEl).setName("API key").setDesc("Your Anthropic API key. Get one at console.anthropic.com").addText(
       (text) => text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
@@ -3660,7 +3659,7 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
         inputEl.type = "password";
     });
     new import_obsidian4.Setting(containerEl).setName("Model").setDesc("Claude model to use for responses").addDropdown(
-      (dropdown) => dropdown.addOption("claude-sonnet-4-6", "Claude Sonnet 4.6 (Fast, recommended)").addOption("claude-opus-4-6", "Claude Opus 4.6 (Most capable)").addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5 (Fastest, cheapest)").setValue(this.plugin.settings.model).onChange(async (value) => {
+      (dropdown) => dropdown.addOption("claude-sonnet-4-6", "Claude Sonnet 4.6 (fast, recommended)").addOption("claude-opus-4-6", "Claude Opus 4.6 (most capable)").addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5 (fastest, cheapest)").setValue(this.plugin.settings.model).onChange(async (value) => {
         this.plugin.settings.model = value;
         await this.plugin.saveSettings();
       })
@@ -3672,14 +3671,14 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
       })
     );
     new import_obsidian4.Setting(containerEl).setName("Language & behavior").setHeading();
-    new import_obsidian4.Setting(containerEl).setName("Language").setDesc("Language for the Help guide and UI. Claude automatically responds in the language you write in.").addDropdown(
+    new import_obsidian4.Setting(containerEl).setName("Language").setDesc("Language for the help guide and UI. Claude automatically responds in the language you write in.").addDropdown(
       (dropdown) => dropdown.addOption("en", "English").addOption("ko", "\uD55C\uAD6D\uC5B4").addOption("ja", "\u65E5\u672C\u8A9E").addOption("de", "Deutsch").addOption("zh", "\u4E2D\u6587").addOption("es", "Espa\xF1ol").addOption("fr", "Fran\xE7ais").setValue(this.plugin.settings.language).onChange(async (value) => {
         this.plugin.settings.language = value;
         await this.plugin.saveSettings();
       })
     );
     new import_obsidian4.Setting(containerEl).setName("Custom system prompt").setDesc(
-      "Additional instructions for Claude. Appended to the default system prompt."
+      "Additional instructions for Claude, appended to the default system prompt."
     ).addTextArea(
       (text) => text.setPlaceholder(
         "e.g., Always use bullet points. Prefer Korean tags."
