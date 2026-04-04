@@ -751,7 +751,7 @@ export class VaultTools {
 
   private async setFrontmatter(
     path: string,
-    fields: Record<string, unknown>
+    data: Record<string, unknown>
   ): Promise<string> {
     const blocked = this.guardPath(path);
     if (blocked) return blocked;
@@ -759,14 +759,22 @@ export class VaultTools {
     const file = this.getFile(path);
     if (!file) return JSON.stringify({ error: `File not found: ${path}` });
 
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
-      for (const [key, value] of Object.entries(fields)) {
-        fm[key] = value;
-      }
-    });
-
-    new Notice(`Updated frontmatter: ${path}`);
-    return JSON.stringify({ success: true, path, updatedFields: Object.keys(fields) });
+    try {
+      await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        for (const [key, value] of Object.entries(data)) {
+          // Normalize singular → plural for Obsidian 1.9+ compat
+          const normalizedKey = key === "tag" ? "tags"
+            : key === "alias" ? "aliases"
+            : key === "cssclass" ? "cssclasses"
+            : key;
+          frontmatter[normalizedKey] = value;
+        }
+      });
+      return JSON.stringify({ success: true, path: file.path, updated: Object.keys(data) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return JSON.stringify({ error: `Failed to update frontmatter: ${msg}` });
+    }
   }
 
   private getBacklinks(path: string): string {
@@ -946,17 +954,26 @@ export class VaultTools {
     });
 
     let updated = 0;
+    let errors = 0;
     for (const file of targetFiles) {
-      await this.app.fileManager.processFrontMatter(file, (fm) => {
-        for (const [key, value] of Object.entries(fields)) {
-          fm[key] = value;
-        }
-      });
-      updated++;
+      try {
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+          for (const [key, value] of Object.entries(fields)) {
+            const normalizedKey = key === "tag" ? "tags"
+              : key === "alias" ? "aliases"
+              : key === "cssclass" ? "cssclasses"
+              : key;
+            frontmatter[normalizedKey] = value;
+          }
+        });
+        updated++;
+      } catch {
+        errors++;
+      }
     }
 
     new Notice(`Updated frontmatter on ${updated} notes`);
-    return JSON.stringify({ success: true, updatedCount: updated });
+    return JSON.stringify({ success: true, updatedCount: updated, errors });
   }
 
   private findDuplicateNotes(threshold?: number): string {

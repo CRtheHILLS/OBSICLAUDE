@@ -9,7 +9,7 @@
 
 <br />
 
-[![Version](https://img.shields.io/badge/v1.1.0-🚀_Magic_Write-10b981?style=for-the-badge&labelColor=1a1b26)](https://github.com/CRtheHILLS/obsiclaude/releases)
+[![Version](https://img.shields.io/badge/v1.2.0-🚀_Editor_AI-10b981?style=for-the-badge&labelColor=1a1b26)](https://github.com/CRtheHILLS/obsiclaude/releases)
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.0.0+-7c3aed?style=for-the-badge&logo=obsidian&logoColor=white)](https://obsidian.md)
 [![Claude](https://img.shields.io/badge/Claude-Sonnet_|_Opus_|_Haiku-ec4899?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com)
 [![License](https://img.shields.io/badge/MIT-License-3b82f6?style=for-the-badge)](LICENSE)
@@ -18,13 +18,13 @@
 
 **The first Obsidian plugin that lets Claude *actually touch* your vault.**
 <br />
-Not just chat — `create` · `edit` · `move` · `search` · `organize` · `analyze`
+Not just chat — `right-click AI` · `@ mentions` · `create` · `edit` · `organize` · `analyze`
 <br />
-All through natural conversation. 20 tools. Zero dependencies.
+Editor-integrated AI. 20 tools. Zero dependencies.
 
 <br />
 
-[**Get Started →**](#-quick-start) · [Features](#-features) · [Magic Write](#-magic-write) · [Tools](#-vault-tools-20) · [Install](#-installation)
+[**Get Started →**](#-quick-start) · [What's New](#-whats-new-in-v120) · [Features](#-features) · [Magic Write](#-magic-write) · [Tools](#-vault-tools-20) · [Install](#-installation)
 
 <br />
 
@@ -33,6 +33,41 @@ All through natural conversation. 20 tools. Zero dependencies.
 <br />
 
 </div>
+
+## 🆕 What's New in v1.2.0
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🖱️ Right-Click AI Menu
+Select text in any note → right-click → **5 AI actions** directly in editor:
+- **Summarize** — condense selected text
+- **Translate** — auto-detect Korean/English
+- **Improve** — better clarity and flow
+- **Explain** — simplify complex text
+- **Ask Claude...** — custom prompt
+
+Results inserted directly into your note. No sidebar needed.
+
+</td>
+<td width="50%" valign="top">
+
+### ⚡ New in This Release
+- **@ Mentions** — type `@` in chat to search & attach files instantly
+- **Vault Doctor** — health diagnosis with auto-fix suggestions
+- **Quick Actions** — one-click shortcuts for common tasks
+- **Quick Prompts** — saves your frequent prompts, click to reuse
+- **Typing Animation** — smooth word-by-word response display
+- **Status Bar** — model name + token counter at bottom
+- **Smart Frontmatter** — always generates complete, standard YAML
+- **Auto-Continue** — long responses continue automatically (no truncation)
+
+</td>
+</tr>
+</table>
+
+<br />
 
 ## 🧠 Why OBSICLAUDE?
 
@@ -114,10 +149,10 @@ Claude autonomously plans and executes multi-step operations
 </td>
 <td width="33%" align="center">
 
-### 🌊 Real-Time Streaming
-Token-by-token with live indicator
+### 🖱️ Right-Click AI
+5 editor actions
 <br />
-See what Claude is doing — which tools, how long, what phase
+Select text → right-click → Summarize, Translate, Improve, Explain
 
 </td>
 <td width="33%" align="center">
@@ -132,10 +167,10 @@ Files + entire folders
 <tr>
 <td align="center">
 
-### 🔍 Vault Overview
-Structure scan · Tag health
+### 🩺 Vault Doctor
+Diagnosis + auto-fix
 <br />
-Health Score (A–F) with prioritized action plan
+Health Score (A–F) with "Want me to fix this?" prompts
 
 </td>
 <td align="center">
@@ -233,15 +268,16 @@ Your API key, your data, zero middlemen
 | Feature | **OBSICLAUDE** | Copilot | Smart Connections | Text Generator |
 |---|:---:|:---:|:---:|:---:|
 | Agentic tool use | **20 tools** | ❌ | ❌ | ❌ |
-| Create/edit/move notes | ✅ | ❌ | ❌ | Append only |
+| Right-click AI menu | **5 actions** | ❌ | ❌ | ❌ |
+| @ Mentions in chat | ✅ | ✅ | ❌ | ❌ |
 | Magic Write (guided) | ✅ 8 styles | ❌ | ❌ | ❌ |
+| Vault Doctor (auto-fix) | ✅ A–F Score | ❌ | ❌ | ❌ |
+| Quick Prompts | ✅ Frequency-based | ❌ | ❌ | Templates |
+| Create/edit/move notes | ✅ | ❌ | ❌ | Append only |
 | Multi-step automation | **15 iterations** | ❌ | ❌ | ❌ |
-| Real-time streaming | ✅ | ✅ | ❌ | ✅ |
-| Drag & drop context | ✅ Files+Folders | ❌ | ❌ | ❌ |
-| Vault health check | ✅ A–F Score | ❌ | ❌ | ❌ |
-| Orphan/duplicate finder | ✅ Built-in | ❌ | Similarity | ❌ |
+| Status bar (tokens) | ✅ | ❌ | ❌ | ❌ |
+| Auto-continue (long text) | ✅ Up to 3x | ❌ | ❌ | ❌ |
 | Batch frontmatter | ✅ | ❌ | ❌ | ❌ |
-| Follow-up queue | ✅ | ❌ | ❌ | ❌ |
 | Model switching | S/O/H | GPT only | Varies | Varies |
 | Privacy | **Direct to API** | Direct | Local | Varies |
 
@@ -285,12 +321,15 @@ cd obsiclaude && npm install && npm run build
 
 ## 🗺️ Roadmap
 
-- [ ] 📋 Community plugin store submission
-- [ ] 🧩 Template system for workflows
+- [x] 📋 Community plugin store submission *(in review)*
+- [x] 🖱️ Right-click AI menu *(v1.2.0)*
+- [x] ⚡ @ Mentions & Quick Prompts *(v1.2.0)*
+- [x] 🩺 Vault Doctor with auto-fix *(v1.2.0)*
+- [ ] 🎯 Floating AI popup on text selection
+- [ ] 🧩 Prompt templates as vault files
+- [ ] 🔍 Semantic search (RAG)
+- [ ] 🏠 Multi-model support (OpenAI, Ollama)
 - [ ] 🕸️ Canvas/graph view integration
-- [ ] 🎤 Voice input support
-- [ ] 🔌 Plugin API for custom tools
-- [ ] 📊 Vault analytics dashboard
 
 <br />
 

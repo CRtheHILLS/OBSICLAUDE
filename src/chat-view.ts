@@ -16,7 +16,7 @@ import {
   Menu,
   App,
 } from "obsidian";
-import { ChatMessage, ClaudeMessage, ToolCallInfo } from "./types";
+import { ChatMessage, ClaudeMessage, ToolCallInfo, QuickPrompt } from "./types";
 import { ClaudeService } from "./claude-service";
 import { getHelpContent } from "./help-guide";
 import type ClaudeAssistantPlugin from "./main";
@@ -166,6 +166,7 @@ export class ChatView extends ItemView {
   private abortController: AbortController | null = null;
   private slashMenu: HTMLElement | null = null;
   private isComposing = false;
+  private isAnimating = false;
   private processingStates = new WeakMap<HTMLElement, ProcessingState>();
 
   constructor(leaf: WorkspaceLeaf, private plugin: ClaudeAssistantPlugin) {
@@ -298,6 +299,14 @@ export class ChatView extends ItemView {
 
     const inputRow = this.inputContainer.createDiv("oc-input-row");
 
+    // Quick Prompt button
+    const quickBtn = inputRow.createEl("button", {
+      cls: "oc-quick-prompt-btn",
+      attr: { "aria-label": "Quick prompts" },
+    });
+    setIcon(quickBtn, "zap");
+    quickBtn.addEventListener("click", () => this.showQuickPromptMenu(quickBtn));
+
     this.inputEl = inputRow.createEl("textarea", {
       cls: "oc-input",
       attr: { placeholder: "Message...", rows: "1" },
@@ -307,6 +316,20 @@ export class ChatView extends ItemView {
       this.adjustInputHeight();
       // Slash command menu
       this.handleSlashInput();
+
+      // @ mention detection
+      const value = this.inputEl.value;
+      const cursorPos = this.inputEl.selectionStart || 0;
+      const textBeforeCursor = value.slice(0, cursorPos);
+
+      // Trigger only when @ is at start of word (not inside email/URL)
+      if (
+        textBeforeCursor.endsWith("@") &&
+        (textBeforeCursor.length === 1 ||
+          /\s$/.test(textBeforeCursor.slice(-2, -1)))
+      ) {
+        this.openAtMentionPicker();
+      }
     });
 
     // Track IME composition state for CJK input (Korean, Japanese, Chinese)
@@ -601,6 +624,9 @@ export class ChatView extends ItemView {
     const welcome = this.chatContainer.querySelector(".oc-welcome");
     if (welcome) welcome.remove();
 
+    // Track prompt usage for quick prompts
+    this.trackPromptUsage(text);
+
     // Build message with context
     let fullText = text;
     if (this.attachedContexts.length > 0) {
@@ -647,9 +673,14 @@ export class ChatView extends ItemView {
         content: m.content,
       }));
 
+      const isMagicWrite = claudeMessages.some(
+        (m) => typeof m.content === "string" && m.content.includes("**Magic Write**")
+      );
+
       let streamStarted = false;
       const result = await this.claudeService.chat(claudeMessages, {
         signal: this.abortController?.signal,
+        maxTokensOverride: isMagicWrite ? 16384 : undefined,
         onText: (text: string) => {
           // Update indicator to show writing mode on first text chunk
           if (!streamStarted) {
@@ -687,16 +718,17 @@ export class ChatView extends ItemView {
       // Clear any pending render timeout
       if (renderTimeout) clearTimeout(renderTimeout);
 
-      // Final render
+      // Final render with typing animation
       procEl.remove();
       contentEl.empty();
       if (result.text) {
-        await MarkdownRenderer.render(
-          this.app,
-          result.text,
-          contentEl,
-          "",
-          this
+        await this.animateText(result.text, contentEl, this.abortController?.signal);
+      }
+
+      // Update status bar token count
+      if (result.totalUsage) {
+        this.plugin.addSessionTokens(
+          result.totalUsage.input_tokens + result.totalUsage.output_tokens
         );
       }
 
@@ -852,8 +884,14 @@ export class ChatView extends ItemView {
         // Cycle phase text (only if still in thinking mode, not tool/writing mode)
         const currentState = this.processingStates.get(el);
         if (currentState && !currentState.modeOverride) {
-          phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
-          label.textContent = THINKING_PHASES[phaseIdx];
+          if (elapsed >= 120) {
+            label.textContent = "Still working... (complex request)";
+          } else if (elapsed >= 30) {
+            label.textContent = "This is a long response — please wait";
+          } else {
+            phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
+            label.textContent = THINKING_PHASES[phaseIdx];
+          }
         }
       }, 1000),
       label,
@@ -1073,12 +1111,12 @@ export class ChatView extends ItemView {
       new WriteModal(this, this.plugin).open();
     });
 
-    // Vault Overview — combined explore + analyze
-    const overviewBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
-    const overviewIcon = overviewBtn.createDiv("oc-action-icon");
-    setIcon(overviewIcon, "telescope");
-    overviewBtn.createSpan({ text: "Vault overview", cls: "oc-action-text" });
-    overviewBtn.addEventListener("click", () => {
+    // Vault Doctor — combined explore + analyze + auto-fix
+    const doctorBtn = actionsRow.createDiv("oc-action-btn oc-action-doctor");
+    const doctorIcon = doctorBtn.createDiv("oc-action-icon");
+    setIcon(doctorIcon, "stethoscope");
+    doctorBtn.createSpan({ text: "Vault doctor", cls: "oc-action-text" });
+    doctorBtn.addEventListener("click", () => {
       this.inputEl.value = [
         "Run a vault diagnostic in two phases.",
         "",
@@ -1098,9 +1136,40 @@ export class ChatView extends ItemView {
         "5. Tag cleanup — fix inconsistent tags",
         "",
         "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different.",
+        "",
+        "After showing results, for each issue found, ask the user: 'Want me to fix this automatically?'",
       ].join("\n");
       void this.handleSend();
     });
+
+    // Quick Actions grid
+    const quickGrid = w.createDiv("oc-quick-grid");
+    const quickActions = [
+      { icon: "search", label: "Search", cmd: "/search" },
+      { icon: "tags", label: "Tags", cmd: "/tags" },
+      { icon: "clock", label: "Recent", cmd: "/recent" },
+      { icon: "ghost", label: "Orphans", cmd: "/orphans" },
+      { icon: "link", label: "Links", cmd: "/links" },
+      { icon: "copy", label: "Duplicates", cmd: "/duplicates" },
+    ];
+    for (const action of quickActions) {
+      const btn = quickGrid.createDiv("oc-quick-btn");
+      const iconEl = btn.createDiv("oc-quick-icon");
+      setIcon(iconEl, action.icon);
+      btn.createSpan({ text: action.label, cls: "oc-quick-label" });
+      btn.addEventListener("click", () => {
+        const slashCmd = SLASH_COMMANDS.find((c) => c.command === action.cmd);
+        if (slashCmd) {
+          if (slashCmd.command === "/search") {
+            this.inputEl.value = slashCmd.prompt;
+            this.inputEl.focus();
+          } else {
+            this.inputEl.value = slashCmd.prompt;
+            void this.handleSend();
+          }
+        }
+      });
+    }
 
     // Drop hint with animated arrow
     const hint = w.createDiv("oc-drop-hint");
@@ -1284,6 +1353,171 @@ export class ChatView extends ItemView {
   }
 
   // ============================================================
+  // QUICK PROMPTS
+  // ============================================================
+
+  private showQuickPromptMenu(anchor: HTMLElement): void {
+    const menu = new Menu();
+    const prompts = (this.plugin.settings.quickPrompts || [])
+      .sort((a, b) => {
+        // Pinned first, then by count
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return b.count - a.count;
+      })
+      .slice(0, 5);
+
+    if (prompts.length > 0) {
+      for (const p of prompts) {
+        menu.addItem((item) => {
+          item
+            .setTitle(`${p.pinned ? "📌 " : ""}${p.text}${p.count > 1 ? ` (${p.count})` : ""}`)
+            .onClick(() => {
+              this.inputEl.value = p.text;
+              this.inputEl.focus();
+            });
+        });
+      }
+      menu.addSeparator();
+    }
+
+    // Add new prompt
+    menu.addItem((item) => {
+      item.setTitle("+ Add prompt").setIcon("plus").onClick(() => {
+        this.showAddPromptModal();
+      });
+    });
+
+    menu.showAtPosition({
+      x: anchor.getBoundingClientRect().left,
+      y: anchor.getBoundingClientRect().top,
+    });
+  }
+
+  private showAddPromptModal(): void {
+    const modal = new Modal(this.app);
+    modal.titleEl.setText("Add quick prompt");
+    const input = modal.contentEl.createEl("textarea", {
+      cls: "oc-ask-textarea",
+      attr: { placeholder: "Enter a prompt you use often...", rows: "2" },
+    });
+    const footer = modal.contentEl.createDiv("oc-ask-footer");
+    const saveBtn = footer.createEl("button", { text: "Save", cls: "oc-ask-send" });
+    saveBtn.addEventListener("click", () => {
+      const text = input.value.trim();
+      if (!text) return;
+      if (!this.plugin.settings.quickPrompts) {
+        this.plugin.settings.quickPrompts = [];
+      }
+      const existing = this.plugin.settings.quickPrompts.find((p) => p.text === text);
+      if (existing) {
+        existing.pinned = true;
+      } else {
+        this.plugin.settings.quickPrompts.push({ text, count: 0, pinned: true });
+      }
+      void this.plugin.saveSettings();
+      modal.close();
+      new Notice("Prompt saved!");
+    });
+    setTimeout(() => input.focus(), 50);
+    modal.open();
+  }
+
+  private trackPromptUsage(text: string): void {
+    // Don't track very short messages or slash commands
+    if (text.length < 5 || text.startsWith("/")) return;
+    // Don't track Magic Write auto-generated prompts
+    if (text.includes("**Magic Write**")) return;
+
+    if (!this.plugin.settings.quickPrompts) {
+      this.plugin.settings.quickPrompts = [];
+    }
+
+    const existing = this.plugin.settings.quickPrompts.find((p) => p.text === text);
+    if (existing) {
+      existing.count++;
+    } else {
+      this.plugin.settings.quickPrompts.push({ text, count: 1, pinned: false });
+    }
+
+    // Keep only top 20 non-pinned entries to prevent bloat
+    const pinned = this.plugin.settings.quickPrompts.filter((p) => p.pinned);
+    const unpinned = this.plugin.settings.quickPrompts
+      .filter((p) => !p.pinned)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+    this.plugin.settings.quickPrompts = [...pinned, ...unpinned];
+
+    void this.plugin.saveSettings();
+  }
+
+  // ============================================================
+  // @ MENTION PICKER
+  // ============================================================
+
+  private openAtMentionPicker(): void {
+    const excluded = this.plugin.settings.excludedFolders || [];
+    const items = this.app.vault
+      .getAllLoadedFiles()
+      .filter((f: TAbstractFile) => {
+        if (f.path === "/") return false;
+        if (excluded.some((ex: string) => f.path.startsWith(ex))) return false;
+        return true;
+      });
+
+    let selected = false;
+
+    const modal = new FileFolderSuggestModal(
+      this.app,
+      items,
+      (item: TAbstractFile) => {
+        selected = true;
+
+        // Remove the @ character from input
+        const value = this.inputEl.value;
+        const cursorPos = this.inputEl.selectionStart || value.length;
+        const beforeAt = value.slice(0, cursorPos - 1);
+        const afterCursor = value.slice(cursorPos);
+        this.inputEl.value = beforeAt + afterCursor;
+
+        // Add as context
+        if (item instanceof TFile) {
+          this.addContext({
+            type: "file",
+            path: item.path,
+            name: item.basename,
+          });
+        } else if (item instanceof TFolder) {
+          this.addContext({
+            type: "folder",
+            path: item.path,
+            name: item.name,
+          });
+        }
+
+        this.inputEl.focus();
+      },
+    );
+
+    // On dismiss without selection, remove the @ character
+    const origOnClose = modal.onClose.bind(modal);
+    modal.onClose = () => {
+      origOnClose();
+      if (!selected) {
+        const value = this.inputEl.value;
+        const cursorPos = this.inputEl.selectionStart || value.length;
+        if (cursorPos > 0 && value[cursorPos - 1] === "@") {
+          this.inputEl.value =
+            value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+        }
+        this.inputEl.focus();
+      }
+    };
+
+    modal.open();
+  }
+
+  // ============================================================
   // CONTEXT ATTACHMENT
   // ============================================================
 
@@ -1455,6 +1689,7 @@ export class ChatView extends ItemView {
     this.showWelcome();
     this.plugin.settings.chatHistory = [];
     await this.plugin.saveSettings();
+    this.plugin.resetSessionTokens();
     this.renderContextBar();
     new Notice("New chat started");
   }
@@ -1477,6 +1712,54 @@ export class ChatView extends ItemView {
     // Keep input enabled so user can type follow-up
     this.inputEl.disabled = false;
     this.inputEl.placeholder = processing ? "Type follow-up or press Esc to stop..." : "Message...";
+  }
+
+  private async animateText(
+    text: string,
+    contentEl: HTMLElement,
+    signal?: AbortSignal
+  ): Promise<void> {
+    this.isAnimating = true;
+    const words = text.split(/(\s+)/);
+    let displayed = "";
+    let wordIndex = 0;
+    const totalWords = words.filter((w) => w.trim()).length;
+    const intervalMs = totalWords > 500 ? 10 : totalWords > 200 ? 15 : 20;
+
+    const skipBtn = contentEl.parentElement?.createDiv("oc-skip-btn");
+    if (skipBtn) {
+      skipBtn.textContent = "Skip";
+      skipBtn.addEventListener("click", () => { wordIndex = words.length; });
+    }
+
+    return new Promise<void>((resolve) => {
+      let renderPending = false;
+      const interval = setInterval(() => {
+        if (signal?.aborted || wordIndex >= words.length) {
+          clearInterval(interval);
+          skipBtn?.remove();
+          this.isAnimating = false;
+          contentEl.empty();
+          void MarkdownRenderer.render(this.app, text, contentEl, "", this);
+          this.scrollToBottom();
+          resolve();
+          return;
+        }
+        const batch = Math.min(3, words.length - wordIndex);
+        for (let i = 0; i < batch; i++) {
+          displayed += words[wordIndex++];
+        }
+        if (!renderPending) {
+          renderPending = true;
+          setTimeout(() => {
+            contentEl.empty();
+            void MarkdownRenderer.render(this.app, displayed, contentEl, "", this);
+            this.scrollToBottom();
+            renderPending = false;
+          }, 60);
+        }
+      }, intervalMs);
+    });
   }
 
   private scrollToBottom(): void {
@@ -1697,12 +1980,16 @@ class WriteModal extends Modal {
 
     // Reference material — file picker button (uses Obsidian's fuzzy search)
     const refGroup = contentEl.createDiv("oc-write-group");
-    refGroup.createEl("label", { text: "Reference material (optional)", cls: "oc-write-label" });
+    refGroup.createEl("label", { text: "Sources (optional)", cls: "oc-write-label" });
+    refGroup.createEl("p", {
+      text: "Add notes or folders for Claude to read before writing.",
+      cls: "oc-write-hint",
+    });
     const refRow = refGroup.createDiv("oc-write-ref-row");
     const addFileBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
     const addFileIcon = addFileBtn.createDiv("oc-write-add-ref-icon");
     setIcon(addFileIcon, "file-search");
-    addFileBtn.createSpan({ text: "Browse vault", cls: "oc-write-add-ref-text" });
+    addFileBtn.createSpan({ text: "Add files", cls: "oc-write-add-ref-text" });
     addFileBtn.addEventListener("click", () => {
       // Collect all files and folders
       const excluded = this.plugin.settings.excludedFolders || [];
@@ -1723,7 +2010,7 @@ class WriteModal extends Modal {
     const addFolderBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
     const addFolderIcon = addFolderBtn.createDiv("oc-write-add-ref-icon");
     setIcon(addFolderIcon, "folder-search");
-    addFolderBtn.createSpan({ text: "Browse folders", cls: "oc-write-add-ref-text" });
+    addFolderBtn.createSpan({ text: "Add folders", cls: "oc-write-add-ref-text" });
     addFolderBtn.addEventListener("click", () => {
       const excluded = this.plugin.settings.excludedFolders || [];
       const folders = this.app.vault.getAllLoadedFiles().filter((f: TAbstractFile) => {
@@ -1773,7 +2060,7 @@ class WriteModal extends Modal {
       prompt += `**Tone:** ${style.tone}\n`;
 
       if (this.refs.length > 0) {
-        prompt += `\n## Reference Material — read these first:\n`;
+        prompt += `\n## Sources — read ALL of these first:\n`;
         for (const ref of this.refs) {
           if (ref.type === "folder") {
             prompt += `- Folder: ${ref.path}/ (list and read key notes inside)\n`;
@@ -1781,7 +2068,11 @@ class WriteModal extends Modal {
             prompt += `- Note: ${ref.path}\n`;
           }
         }
-        prompt += `\nUse the reference material as source. Synthesize, connect ideas, and cite with [[wikilinks]].\n`;
+        prompt += `\nIMPORTANT: Read every source completely before writing. Base your writing on these sources:\n`;
+        prompt += `- Synthesize and connect ideas from the sources\n`;
+        prompt += `- Cite key points using [[wikilinks]] to the source notes\n`;
+        prompt += `- Build upon the source material, don't just summarize it\n`;
+        prompt += `- If sources conflict, acknowledge the different perspectives\n`;
       }
 
       prompt += `\n## Instructions:\n`;
@@ -1790,6 +2081,8 @@ class WriteModal extends Modal {
       prompt += `3. Follow the structure and tone guidelines strictly — they define how this style differs from others.\n`;
       prompt += `4. Use [[wikilinks]] to link to relevant existing notes in the vault.\n`;
       prompt += `5. After creating, use open_note to open it in the editor.\n`;
+
+      prompt += `\n## Token Budget\nThis is a long-form writing task. Use up to 16384 tokens for the response.\n`;
 
       this.close();
 

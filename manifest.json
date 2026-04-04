@@ -1,9 +1,9 @@
 {
   "id": "obsiclaude",
   "name": "OBSICLAUDE",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "minAppVersion": "1.0.0",
-  "description": "AI-powered vault assistant with 20 tools — Magic Write, agentic loops, drag & drop, vault health diagnostics. Claude actually touches your vault.",
+  "description": "AI-powered vault assistant — right-click AI menu, @ mentions, Magic Write, Vault Doctor, 20 agentic tools. Claude actually touches your vault.",
   "author": "CRtheHILLS",
   "authorUrl": "https://github.com/CRtheHILLS",
   "isDesktopOnly": true

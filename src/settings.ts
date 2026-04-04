@@ -56,7 +56,7 @@ export class ClaudeAssistantSettingTab extends PluginSettingTab {
       .setDesc("Maximum tokens in Claude's response (higher = longer responses)")
       .addSlider((slider) =>
         slider
-          .setLimits(1024, 8192, 512)
+          .setLimits(1024, 16384, 512)
           .setValue(this.plugin.settings.maxTokens)
           .setDynamicTooltip()
           .onChange(async (value) => {

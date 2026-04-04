@@ -439,18 +439,20 @@
   font-weight: 600;
 }
 
-.oc-action-explore {
-  background: linear-gradient(135deg, rgba(167,139,250,0.12), rgba(124,58,237,0.08));
-  color: #8b5cf6;
+.oc-action-doctor {
+  background: linear-gradient(135deg, rgba(110,231,183,0.12), rgba(16,185,129,0.08));
+  color: #6ee7b7;
 }
 
-.oc-action-explore:hover {
-  border-color: #8b5cf6;
-  background: linear-gradient(135deg, rgba(167,139,250,0.2), rgba(124,58,237,0.14));
+.oc-action-doctor:hover {
+  border-color: #6ee7b7;
+  background: linear-gradient(135deg, rgba(110,231,183,0.2), rgba(16,185,129,0.14));
   transform: translateY(-1px);
 }
 
-/* (analyze merged into vault overview — uses oc-action-explore styles) */
+.oc-action-doctor .oc-action-icon {
+  color: #6ee7b7;
+}
 
 .oc-action-icon {
   display: flex;
@@ -1349,4 +1351,112 @@
 .oc-settings-textarea-mono {
   font-family: monospace;
   height: 80px;
+}
+
+/* Quick Actions Grid */
+.oc-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 12px 0 8px;
+  padding: 0 4px;
+}
+.oc-quick-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  background: var(--background-secondary);
+}
+.oc-quick-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.oc-quick-icon {
+  color: var(--text-muted);
+}
+.oc-quick-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   Typing Animation — Skip Button
+   ============================================================ */
+
+.oc-skip-btn {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: right;
+  padding: 2px 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.oc-skip-btn:hover {
+  opacity: 1;
+  color: var(--text-accent);
+}
+
+/* ============================================================
+   Ask Claude Modal (Right-Click AI Menu)
+   ============================================================ */
+
+.oc-ask-modal { padding: 16px; }
+.oc-ask-modal h3 { margin: 0 0 12px; }
+.oc-ask-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.oc-ask-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+.oc-ask-send {
+  background: var(--interactive-accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Status Bar
+   ============================================================ */
+
+.oc-status-bar {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.oc-write-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 8px;
+}
+
+/* Quick Prompt Button */
+.oc-quick-prompt-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.oc-quick-prompt-btn:hover {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
 }

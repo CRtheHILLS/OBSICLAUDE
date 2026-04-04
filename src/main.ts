@@ -8,11 +8,15 @@ import { VaultTools } from "./vault-tools";
 import { ClaudeService } from "./claude-service";
 import { ChatView, CHAT_VIEW_TYPE } from "./chat-view";
 import { ClaudeAssistantSettingTab } from "./settings";
+import { EditorActions } from "./editor-actions";
 
 export default class ClaudeAssistantPlugin extends Plugin {
   settings: ClaudeAssistantSettings;
   vaultTools: VaultTools;
   claudeService: ClaudeService;
+  editorActions: EditorActions;
+  statusBarEl: HTMLElement;
+  private sessionTokens = 0;
 
   async onload(): Promise<void> {
     try {
@@ -30,6 +34,7 @@ export default class ClaudeAssistantPlugin extends Plugin {
 
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
+    this.editorActions = new EditorActions(this.claudeService, this.settings);
 
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 
@@ -38,6 +43,32 @@ export default class ClaudeAssistantPlugin extends Plugin {
     });
 
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
+
+    // ---- Status bar ----
+
+    this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass("oc-status-bar");
+    this.updateStatusBar();
+    this.statusBarEl.addEventListener("click", (e) => {
+      const menu = new Menu();
+      const models = [
+        { id: "claude-sonnet-4-6" as const, label: "Sonnet" },
+        { id: "claude-opus-4-6" as const, label: "Opus" },
+        { id: "claude-haiku-4-5-20251001" as const, label: "Haiku" },
+      ];
+      for (const model of models) {
+        menu.addItem((item) => {
+          item.setTitle(model.label)
+            .setChecked(this.settings.model === model.id)
+            .onClick(async () => {
+              this.settings.model = model.id;
+              await this.saveSettings();
+              this.updateStatusBar();
+            });
+        });
+      }
+      menu.showAtMouseEvent(e);
+    });
 
     // ---- File/Folder context menu: "Send to chat" ----
 
@@ -66,6 +97,38 @@ export default class ClaudeAssistantPlugin extends Plugin {
               });
           });
         }
+      })
+    );
+
+    // ---- Editor right-click AI menu ----
+
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu: Menu, editor: Editor, view: MarkdownView) => {
+        const selection = editor.getSelection();
+        if (!selection || !selection.trim()) return;
+
+        menu.addSeparator();
+
+        menu.addItem((item) => {
+          item.setTitle("Summarize").setIcon("align-left")
+            .onClick(() => { void this.editorActions.summarize(editor); });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Translate").setIcon("languages")
+            .onClick(() => { void this.editorActions.translate(editor); });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Improve").setIcon("pen-line")
+            .onClick(() => { void this.editorActions.improve(editor); });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Explain").setIcon("lightbulb")
+            .onClick(() => { void this.editorActions.explain(editor); });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Ask Claude...").setIcon("message-circle")
+            .onClick(() => { void this.editorActions.askClaude(editor, this.app); });
+        });
       })
     );
 
@@ -187,5 +250,24 @@ export default class ClaudeAssistantPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE);
     if (leaves.length === 0) return null;
     return leaves[0].view as ChatView;
+  }
+
+  updateStatusBar(): void {
+    const modelName = this.settings.model.includes("sonnet") ? "Sonnet"
+      : this.settings.model.includes("opus") ? "Opus" : "Haiku";
+    const tokenStr = this.sessionTokens > 0
+      ? `${this.sessionTokens.toLocaleString()} tokens`
+      : "\u2014";
+    this.statusBarEl.setText(`${modelName} | ${tokenStr}`);
+  }
+
+  addSessionTokens(count: number): void {
+    this.sessionTokens += count;
+    this.updateStatusBar();
+  }
+
+  resetSessionTokens(): void {
+    this.sessionTokens = 0;
+    this.updateStatusBar();
   }
 }

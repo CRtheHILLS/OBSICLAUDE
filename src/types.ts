@@ -3,6 +3,12 @@
 // ============================================================
 
 /** Plugin settings stored in data.json */
+export interface QuickPrompt {
+  text: string;
+  count: number;
+  pinned: boolean;
+}
+
 export interface ClaudeAssistantSettings {
   apiKey: string;
   model: "claude-sonnet-4-6" | "claude-opus-4-6" | "claude-haiku-4-5-20251001";
@@ -12,13 +18,14 @@ export interface ClaudeAssistantSettings {
   excludedFolders: string[];
   frontmatterTemplate: Record<string, string>;
   chatHistory: ChatMessage[];
+  quickPrompts: QuickPrompt[];
 }
 
 export const DEFAULT_SETTINGS: ClaudeAssistantSettings = {
   apiKey: "",
   model: "claude-sonnet-4-6",
   language: "en",
-  maxTokens: 4096,
+  maxTokens: 8192,
   systemPrompt: "",
   excludedFolders: [".trash"],
   frontmatterTemplate: {
@@ -26,6 +33,7 @@ export const DEFAULT_SETTINGS: ClaudeAssistantSettings = {
     tags: "[]",
   },
   chatHistory: [],
+  quickPrompts: [],
 };
 
 // ---- Chat Types ----

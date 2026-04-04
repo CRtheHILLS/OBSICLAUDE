@@ -27,21 +27,22 @@ __export(main_exports, {
   default: () => ClaudeAssistantPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/types.ts
 var DEFAULT_SETTINGS = {
   apiKey: "",
   model: "claude-sonnet-4-6",
   language: "en",
-  maxTokens: 4096,
+  maxTokens: 8192,
   systemPrompt: "",
   excludedFolders: [".trash"],
   frontmatterTemplate: {
     created: "{{date}}",
     tags: "[]"
   },
-  chatHistory: []
+  chatHistory: [],
+  quickPrompts: []
 };
 
 // src/vault-tools.ts
@@ -712,20 +713,25 @@ ${content}`;
     const fm = (cache == null ? void 0 : cache.frontmatter) || {};
     return JSON.stringify({ path, frontmatter: fm });
   }
-  async setFrontmatter(path, fields) {
+  async setFrontmatter(path, data) {
     const blocked = this.guardPath(path);
     if (blocked)
       return blocked;
     const file = this.getFile(path);
     if (!file)
       return JSON.stringify({ error: `File not found: ${path}` });
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
-      for (const [key, value] of Object.entries(fields)) {
-        fm[key] = value;
-      }
-    });
-    new import_obsidian.Notice(`Updated frontmatter: ${path}`);
-    return JSON.stringify({ success: true, path, updatedFields: Object.keys(fields) });
+    try {
+      await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        for (const [key, value] of Object.entries(data)) {
+          const normalizedKey = key === "tag" ? "tags" : key === "alias" ? "aliases" : key === "cssclass" ? "cssclasses" : key;
+          frontmatter[normalizedKey] = value;
+        }
+      });
+      return JSON.stringify({ success: true, path: file.path, updated: Object.keys(data) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return JSON.stringify({ error: `Failed to update frontmatter: ${msg}` });
+    }
   }
   getBacklinks(path) {
     const file = this.getFile(path);
@@ -874,16 +880,22 @@ ${content}`;
       return true;
     });
     let updated = 0;
+    let errors = 0;
     for (const file of targetFiles) {
-      await this.app.fileManager.processFrontMatter(file, (fm) => {
-        for (const [key, value] of Object.entries(fields)) {
-          fm[key] = value;
-        }
-      });
-      updated++;
+      try {
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+          for (const [key, value] of Object.entries(fields)) {
+            const normalizedKey = key === "tag" ? "tags" : key === "alias" ? "aliases" : key === "cssclass" ? "cssclasses" : key;
+            frontmatter[normalizedKey] = value;
+          }
+        });
+        updated++;
+      } catch (e) {
+        errors++;
+      }
     }
     new import_obsidian.Notice(`Updated frontmatter on ${updated} notes`);
-    return JSON.stringify({ success: true, updatedCount: updated });
+    return JSON.stringify({ success: true, updatedCount: updated, errors });
   }
   findDuplicateNotes(threshold) {
     const t = threshold || 0.7;
@@ -1057,7 +1069,37 @@ var ClaudeService = class {
 - Be proactive: if you notice something can be improved (orphan notes, missing tags), suggest it.
 - You can read the active note context to understand what the user is working on.
 
-## Frontmatter Template
+## Frontmatter Rules (ALWAYS APPLY \u2014 even when user doesn't mention it)
+Every note you create or edit MUST have complete, well-structured YAML frontmatter. This applies to ALL operations: creating notes, rewriting notes, translating notes, Magic Write, or any content generation. The user should NEVER have to ask for frontmatter \u2014 it is always included automatically.
+
+### Required fields (always include):
+- title: Note title (string)
+- date: Creation or publication date (ISO 8601: YYYY-MM-DD)
+- tags: Relevant categorization tags (YAML list format, 3-8 tags)
+  tags:
+    - tag1
+    - tag2
+- description: One-line summary of the note content
+- status: draft | published | review | archived
+
+### Recommended fields (include when applicable):
+- created: Creation date if different from date (ISO 8601: YYYY-MM-DD)
+- author: Author name (for articles, clippings, external content)
+- source: URL or origin (for clippings, references, external content)
+- aliases: Alternative names for the note (YAML list)
+- category: Content category (e.g., "\uAC1C\uBC1C\uB3C4\uAD6C", "\uD504\uB85C\uC81D\uD2B8", "\uD559\uC2B5")
+- type: Note type (e.g., "\uBE14\uB85C\uADF8 \uC544\uD2F0\uD074", "\uD68C\uC758\uB85D", "\uB9AC\uC11C\uCE58", "\uD074\uB9AC\uD551")
+- cssclasses: Custom CSS classes (YAML list, only if needed)
+
+### Strict rules:
+- NEVER set any field to null \u2014 omit the field entirely if no value
+- Use PLURAL forms: "tags" not "tag", "aliases" not "alias"
+- Dates MUST be ISO 8601: YYYY-MM-DD
+- Tags must be YAML list (not comma-separated string, not inline array)
+- Do NOT invent non-standard fields (no "license", "language", "related", "mood", "inspiration") unless user explicitly requests them
+- When rewriting or translating a note to another language: TRANSLATE the title, description, tags, category, and type fields to the target language. Keep date, author, source fields as-is. The title MUST be translated \u2014 never leave it in the original language when the user asks for translation or rewriting in a different language
+
+## User's Frontmatter Template (merge with above)
 ${JSON.stringify(this.settings.frontmatterTemplate, null, 2)}
 
 ## Excluded Folders (do not modify files in these)
@@ -1071,7 +1113,7 @@ ${this.settings.excludedFolders.join(", ")}`;
    * Main entry: agentic loop with tool execution.
    */
   async chat(conversationMessages, callbacks) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     if (!this.settings.apiKey) {
       throw new Error(
         "API key not configured. Go to Settings \u2192 OBSICLAUDE to set your API key."
@@ -1079,21 +1121,53 @@ ${this.settings.excludedFolders.join(", ")}`;
     }
     const tools = this.vaultTools.getToolDefinitions();
     const messages = this.trimMessages(conversationMessages);
+    const maxTokens = (callbacks == null ? void 0 : callbacks.maxTokensOverride) || this.settings.maxTokens;
     const allToolCalls = [];
     let fullText = "";
     let iterations = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
       if ((_a = callbacks == null ? void 0 : callbacks.signal) == null ? void 0 : _a.aborted) {
         fullText += "\n\n*(Stopped by user)*";
         break;
       }
-      const response = await this.callAPI(messages, tools);
+      let response = await this.callAPI(messages, tools, maxTokens, callbacks == null ? void 0 : callbacks.timeoutMs);
+      totalInputTokens += ((_b = response.usage) == null ? void 0 : _b.input_tokens) || 0;
+      totalOutputTokens += ((_c = response.usage) == null ? void 0 : _c.output_tokens) || 0;
       const textBlocks = response.content.filter((b) => b.type === "text").map((b) => b.text);
       const iterText = textBlocks.join("\n");
       if (iterText) {
         fullText += iterText;
-        (_b = callbacks == null ? void 0 : callbacks.onText) == null ? void 0 : _b.call(callbacks, fullText);
+        (_d = callbacks == null ? void 0 : callbacks.onText) == null ? void 0 : _d.call(callbacks, fullText);
+      }
+      if (response.stop_reason === "max_tokens") {
+        let continuations = 0;
+        while (response.stop_reason === "max_tokens" && continuations < 3) {
+          continuations++;
+          console.debug(`OBSICLAUDE: auto-continue ${continuations}/3`);
+          (_e = callbacks == null ? void 0 : callbacks.onText) == null ? void 0 : _e.call(callbacks, fullText + "\n\n*(continuing...)*");
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content: "Continue writing from exactly where you stopped. Do not repeat any content."
+          });
+          response = await this.callAPI(messages, tools, maxTokens, callbacks == null ? void 0 : callbacks.timeoutMs);
+          totalInputTokens += ((_f = response.usage) == null ? void 0 : _f.input_tokens) || 0;
+          totalOutputTokens += ((_g = response.usage) == null ? void 0 : _g.output_tokens) || 0;
+          const contText = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+          if (contText) {
+            fullText += contText;
+            (_h = callbacks == null ? void 0 : callbacks.onText) == null ? void 0 : _h.call(callbacks, fullText);
+          }
+        }
+        if (response.stop_reason === "max_tokens") {
+          fullText += "\n\n> Response was very long and may be incomplete. Try breaking into smaller requests.";
+        }
+        if (response.stop_reason !== "tool_use") {
+          break;
+        }
       }
       if (response.stop_reason !== "tool_use") {
         break;
@@ -1107,9 +1181,9 @@ ${this.settings.excludedFolders.join(", ")}`;
       );
       const toolResults = [];
       for (const toolUse of toolUseBlocks) {
-        if ((_c = callbacks == null ? void 0 : callbacks.signal) == null ? void 0 : _c.aborted)
+        if ((_i = callbacks == null ? void 0 : callbacks.signal) == null ? void 0 : _i.aborted)
           break;
-        (_d = callbacks == null ? void 0 : callbacks.onToolStart) == null ? void 0 : _d.call(callbacks, toolUse.name);
+        (_j = callbacks == null ? void 0 : callbacks.onToolStart) == null ? void 0 : _j.call(callbacks, toolUse.name);
         let result = await this.vaultTools.executeTool(
           toolUse.name,
           toolUse.input
@@ -1123,7 +1197,7 @@ ${this.settings.excludedFolders.join(", ")}`;
           result
         };
         allToolCalls.push(tc);
-        (_e = callbacks == null ? void 0 : callbacks.onToolEnd) == null ? void 0 : _e.call(callbacks, tc);
+        (_k = callbacks == null ? void 0 : callbacks.onToolEnd) == null ? void 0 : _k.call(callbacks, tc);
         toolResults.push({
           type: "tool_result",
           tool_use_id: toolUse.id,
@@ -1135,38 +1209,58 @@ ${this.settings.excludedFolders.join(", ")}`;
     if (iterations >= MAX_TOOL_ITERATIONS) {
       fullText += "\n\n> Maximum tool iterations reached. Some tasks may be incomplete.";
     }
-    return { text: fullText, toolCalls: allToolCalls };
+    return {
+      text: fullText,
+      toolCalls: allToolCalls,
+      totalUsage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens }
+    };
   }
   /**
    * Non-streaming API call using Obsidian's requestUrl
    */
-  async callAPI(messages, tools) {
-    var _a;
+  async callAPI(messages, tools, maxTokens, timeoutMs) {
+    var _a, _b;
     const body = {
       model: this.settings.model,
-      max_tokens: this.settings.maxTokens,
+      max_tokens: maxTokens || this.settings.maxTokens,
       system: this.buildSystemPrompt(),
       messages,
       tools
     };
-    const response = await (0, import_obsidian2.requestUrl)({
-      url: CLAUDE_API_URL,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.settings.apiKey,
-        "anthropic-version": API_VERSION,
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify(body),
-      throw: false
-    });
+    const DEFAULT_TIMEOUT = 18e4;
+    const timeout = timeoutMs || DEFAULT_TIMEOUT;
+    const response = await Promise.race([
+      (0, import_obsidian2.requestUrl)({
+        url: CLAUDE_API_URL,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.settings.apiKey,
+          "anthropic-version": API_VERSION,
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify(body),
+        throw: false
+      }),
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Request timed out \u2014 the response took too long. Try a simpler request or increase timeout.")), timeout)
+      )
+    ]);
+    if (response.status === 429) {
+      throw new Error("Rate limited \u2014 please wait a moment and try again.");
+    }
+    if (response.status === 529) {
+      throw new Error("Claude is busy \u2014 please try again in a moment.");
+    }
     if (response.status !== 200) {
       const errorBody = response.json;
       const errorMsg = ((_a = errorBody == null ? void 0 : errorBody.error) == null ? void 0 : _a.message) || `API error: ${response.status}`;
+      console.error("OBSICLAUDE API error:", response.status, errorBody);
       throw new Error(errorMsg);
     }
-    return response.json;
+    const parsed = response.json;
+    console.debug("OBSICLAUDE API response:", parsed.stop_reason, "blocks:", (_b = parsed.content) == null ? void 0 : _b.length, "usage:", parsed.usage);
+    return parsed;
   }
   /**
    * Trim conversation to stay within token limits.
@@ -1906,6 +2000,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
     this.abortController = null;
     this.slashMenu = null;
     this.isComposing = false;
+    this.isAnimating = false;
     this.processingStates = /* @__PURE__ */ new WeakMap();
     // ============================================================
     // CHAT LOGIC (Streaming + Processing Indicator)
@@ -2023,6 +2118,12 @@ var _ChatView = class extends import_obsidian3.ItemView {
     this.contextBar = this.inputContainer.createDiv("oc-context-bar");
     this.contextBar.addClass("oc-hidden");
     const inputRow = this.inputContainer.createDiv("oc-input-row");
+    const quickBtn = inputRow.createEl("button", {
+      cls: "oc-quick-prompt-btn",
+      attr: { "aria-label": "Quick prompts" }
+    });
+    (0, import_obsidian3.setIcon)(quickBtn, "zap");
+    quickBtn.addEventListener("click", () => this.showQuickPromptMenu(quickBtn));
     this.inputEl = inputRow.createEl("textarea", {
       cls: "oc-input",
       attr: { placeholder: "Message...", rows: "1" }
@@ -2030,6 +2131,12 @@ var _ChatView = class extends import_obsidian3.ItemView {
     this.inputEl.addEventListener("input", () => {
       this.adjustInputHeight();
       this.handleSlashInput();
+      const value = this.inputEl.value;
+      const cursorPos = this.inputEl.selectionStart || 0;
+      const textBeforeCursor = value.slice(0, cursorPos);
+      if (textBeforeCursor.endsWith("@") && (textBeforeCursor.length === 1 || /\s$/.test(textBeforeCursor.slice(-2, -1)))) {
+        this.openAtMentionPicker();
+      }
     });
     this.inputEl.addEventListener("compositionstart", () => {
       this.isComposing = true;
@@ -2238,7 +2345,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
     }
   }
   async handleSend() {
-    var _a;
+    var _a, _b;
     const text = this.inputEl.value.trim();
     if (!text)
       return;
@@ -2269,6 +2376,7 @@ var _ChatView = class extends import_obsidian3.ItemView {
     const welcome = this.chatContainer.querySelector(".oc-welcome");
     if (welcome)
       welcome.remove();
+    this.trackPromptUsage(text);
     let fullText = text;
     if (this.attachedContexts.length > 0) {
       const contextLines = this.attachedContexts.map(
@@ -2303,9 +2411,13 @@ ${text}`;
         role: m.role,
         content: m.content
       }));
+      const isMagicWrite = claudeMessages.some(
+        (m) => typeof m.content === "string" && m.content.includes("**Magic Write**")
+      );
       let streamStarted = false;
       const result = await this.claudeService.chat(claudeMessages, {
         signal: (_a = this.abortController) == null ? void 0 : _a.signal,
+        maxTokensOverride: isMagicWrite ? 16384 : void 0,
         onText: (text2) => {
           if (!streamStarted) {
             streamStarted = true;
@@ -2341,12 +2453,11 @@ ${text}`;
       procEl.remove();
       contentEl.empty();
       if (result.text) {
-        await import_obsidian3.MarkdownRenderer.render(
-          this.app,
-          result.text,
-          contentEl,
-          "",
-          this
+        await this.animateText(result.text, contentEl, (_b = this.abortController) == null ? void 0 : _b.signal);
+      }
+      if (result.totalUsage) {
+        this.plugin.addSessionTokens(
+          result.totalUsage.input_tokens + result.totalUsage.output_tokens
         );
       }
       if (result.toolCalls.length > 0) {
@@ -2459,8 +2570,14 @@ ${text}`;
         timeBadge.textContent = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
         const currentState = this.processingStates.get(el);
         if (currentState && !currentState.modeOverride) {
-          phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
-          label.textContent = THINKING_PHASES[phaseIdx];
+          if (elapsed >= 120) {
+            label.textContent = "Still working... (complex request)";
+          } else if (elapsed >= 30) {
+            label.textContent = "This is a long response \u2014 please wait";
+          } else {
+            phaseIdx = (phaseIdx + 1) % THINKING_PHASES.length;
+            label.textContent = THINKING_PHASES[phaseIdx];
+          }
         }
       }, 1e3),
       label,
@@ -2643,11 +2760,11 @@ ${text}`;
     writeBtn.addEventListener("click", () => {
       new WriteModal(this, this.plugin).open();
     });
-    const overviewBtn = actionsRow.createDiv("oc-action-btn oc-action-explore");
-    const overviewIcon = overviewBtn.createDiv("oc-action-icon");
-    (0, import_obsidian3.setIcon)(overviewIcon, "telescope");
-    overviewBtn.createSpan({ text: "Vault overview", cls: "oc-action-text" });
-    overviewBtn.addEventListener("click", () => {
+    const doctorBtn = actionsRow.createDiv("oc-action-btn oc-action-doctor");
+    const doctorIcon = doctorBtn.createDiv("oc-action-icon");
+    (0, import_obsidian3.setIcon)(doctorIcon, "stethoscope");
+    doctorBtn.createSpan({ text: "Vault doctor", cls: "oc-action-text" });
+    doctorBtn.addEventListener("click", () => {
       this.inputEl.value = [
         "Run a vault diagnostic in two phases.",
         "",
@@ -2666,10 +2783,39 @@ ${text}`;
         "4. Reorganize \u2014 suggest a better folder structure",
         "5. Tag cleanup \u2014 fix inconsistent tags",
         "",
-        "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different."
+        "Ask which they'd like to explore next. They can pick a number, ask for multiple, or request something completely different.",
+        "",
+        "After showing results, for each issue found, ask the user: 'Want me to fix this automatically?'"
       ].join("\n");
       void this.handleSend();
     });
+    const quickGrid = w.createDiv("oc-quick-grid");
+    const quickActions = [
+      { icon: "search", label: "Search", cmd: "/search" },
+      { icon: "tags", label: "Tags", cmd: "/tags" },
+      { icon: "clock", label: "Recent", cmd: "/recent" },
+      { icon: "ghost", label: "Orphans", cmd: "/orphans" },
+      { icon: "link", label: "Links", cmd: "/links" },
+      { icon: "copy", label: "Duplicates", cmd: "/duplicates" }
+    ];
+    for (const action of quickActions) {
+      const btn = quickGrid.createDiv("oc-quick-btn");
+      const iconEl = btn.createDiv("oc-quick-icon");
+      (0, import_obsidian3.setIcon)(iconEl, action.icon);
+      btn.createSpan({ text: action.label, cls: "oc-quick-label" });
+      btn.addEventListener("click", () => {
+        const slashCmd = SLASH_COMMANDS.find((c) => c.command === action.cmd);
+        if (slashCmd) {
+          if (slashCmd.command === "/search") {
+            this.inputEl.value = slashCmd.prompt;
+            this.inputEl.focus();
+          } else {
+            this.inputEl.value = slashCmd.prompt;
+            void this.handleSend();
+          }
+        }
+      });
+    }
     const hint = w.createDiv("oc-drop-hint");
     const hintIcon = hint.createSpan("oc-drop-hint-icon");
     (0, import_obsidian3.setIcon)(hintIcon, "arrow-down-to-line");
@@ -2821,6 +2967,140 @@ ${text}`;
     return resolved;
   }
   // ============================================================
+  // QUICK PROMPTS
+  // ============================================================
+  showQuickPromptMenu(anchor) {
+    const menu = new import_obsidian3.Menu();
+    const prompts = (this.plugin.settings.quickPrompts || []).sort((a, b) => {
+      if (a.pinned && !b.pinned)
+        return -1;
+      if (!a.pinned && b.pinned)
+        return 1;
+      return b.count - a.count;
+    }).slice(0, 5);
+    if (prompts.length > 0) {
+      for (const p of prompts) {
+        menu.addItem((item) => {
+          item.setTitle(`${p.pinned ? "\u{1F4CC} " : ""}${p.text}${p.count > 1 ? ` (${p.count})` : ""}`).onClick(() => {
+            this.inputEl.value = p.text;
+            this.inputEl.focus();
+          });
+        });
+      }
+      menu.addSeparator();
+    }
+    menu.addItem((item) => {
+      item.setTitle("+ Add prompt").setIcon("plus").onClick(() => {
+        this.showAddPromptModal();
+      });
+    });
+    menu.showAtPosition({
+      x: anchor.getBoundingClientRect().left,
+      y: anchor.getBoundingClientRect().top
+    });
+  }
+  showAddPromptModal() {
+    const modal = new import_obsidian3.Modal(this.app);
+    modal.titleEl.setText("Add quick prompt");
+    const input = modal.contentEl.createEl("textarea", {
+      cls: "oc-ask-textarea",
+      attr: { placeholder: "Enter a prompt you use often...", rows: "2" }
+    });
+    const footer = modal.contentEl.createDiv("oc-ask-footer");
+    const saveBtn = footer.createEl("button", { text: "Save", cls: "oc-ask-send" });
+    saveBtn.addEventListener("click", () => {
+      const text = input.value.trim();
+      if (!text)
+        return;
+      if (!this.plugin.settings.quickPrompts) {
+        this.plugin.settings.quickPrompts = [];
+      }
+      const existing = this.plugin.settings.quickPrompts.find((p) => p.text === text);
+      if (existing) {
+        existing.pinned = true;
+      } else {
+        this.plugin.settings.quickPrompts.push({ text, count: 0, pinned: true });
+      }
+      void this.plugin.saveSettings();
+      modal.close();
+      new import_obsidian3.Notice("Prompt saved!");
+    });
+    setTimeout(() => input.focus(), 50);
+    modal.open();
+  }
+  trackPromptUsage(text) {
+    if (text.length < 5 || text.startsWith("/"))
+      return;
+    if (text.includes("**Magic Write**"))
+      return;
+    if (!this.plugin.settings.quickPrompts) {
+      this.plugin.settings.quickPrompts = [];
+    }
+    const existing = this.plugin.settings.quickPrompts.find((p) => p.text === text);
+    if (existing) {
+      existing.count++;
+    } else {
+      this.plugin.settings.quickPrompts.push({ text, count: 1, pinned: false });
+    }
+    const pinned = this.plugin.settings.quickPrompts.filter((p) => p.pinned);
+    const unpinned = this.plugin.settings.quickPrompts.filter((p) => !p.pinned).sort((a, b) => b.count - a.count).slice(0, 20);
+    this.plugin.settings.quickPrompts = [...pinned, ...unpinned];
+    void this.plugin.saveSettings();
+  }
+  // ============================================================
+  // @ MENTION PICKER
+  // ============================================================
+  openAtMentionPicker() {
+    const excluded = this.plugin.settings.excludedFolders || [];
+    const items = this.app.vault.getAllLoadedFiles().filter((f) => {
+      if (f.path === "/")
+        return false;
+      if (excluded.some((ex) => f.path.startsWith(ex)))
+        return false;
+      return true;
+    });
+    let selected = false;
+    const modal = new FileFolderSuggestModal(
+      this.app,
+      items,
+      (item) => {
+        selected = true;
+        const value = this.inputEl.value;
+        const cursorPos = this.inputEl.selectionStart || value.length;
+        const beforeAt = value.slice(0, cursorPos - 1);
+        const afterCursor = value.slice(cursorPos);
+        this.inputEl.value = beforeAt + afterCursor;
+        if (item instanceof import_obsidian3.TFile) {
+          this.addContext({
+            type: "file",
+            path: item.path,
+            name: item.basename
+          });
+        } else if (item instanceof import_obsidian3.TFolder) {
+          this.addContext({
+            type: "folder",
+            path: item.path,
+            name: item.name
+          });
+        }
+        this.inputEl.focus();
+      }
+    );
+    const origOnClose = modal.onClose.bind(modal);
+    modal.onClose = () => {
+      origOnClose();
+      if (!selected) {
+        const value = this.inputEl.value;
+        const cursorPos = this.inputEl.selectionStart || value.length;
+        if (cursorPos > 0 && value[cursorPos - 1] === "@") {
+          this.inputEl.value = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+        }
+        this.inputEl.focus();
+      }
+    };
+    modal.open();
+  }
+  // ============================================================
   // CONTEXT ATTACHMENT
   // ============================================================
   addContext(ctx) {
@@ -2957,6 +3237,7 @@ ${text}`;
     this.showWelcome();
     this.plugin.settings.chatHistory = [];
     await this.plugin.saveSettings();
+    this.plugin.resetSessionTokens();
     this.renderContextBar();
     new import_obsidian3.Notice("New chat started");
   }
@@ -2976,6 +3257,50 @@ ${text}`;
     }
     this.inputEl.disabled = false;
     this.inputEl.placeholder = processing ? "Type follow-up or press Esc to stop..." : "Message...";
+  }
+  async animateText(text, contentEl, signal) {
+    var _a;
+    this.isAnimating = true;
+    const words = text.split(/(\s+)/);
+    let displayed = "";
+    let wordIndex = 0;
+    const totalWords = words.filter((w) => w.trim()).length;
+    const intervalMs = totalWords > 500 ? 10 : totalWords > 200 ? 15 : 20;
+    const skipBtn = (_a = contentEl.parentElement) == null ? void 0 : _a.createDiv("oc-skip-btn");
+    if (skipBtn) {
+      skipBtn.textContent = "Skip";
+      skipBtn.addEventListener("click", () => {
+        wordIndex = words.length;
+      });
+    }
+    return new Promise((resolve) => {
+      let renderPending = false;
+      const interval = setInterval(() => {
+        if ((signal == null ? void 0 : signal.aborted) || wordIndex >= words.length) {
+          clearInterval(interval);
+          skipBtn == null ? void 0 : skipBtn.remove();
+          this.isAnimating = false;
+          contentEl.empty();
+          void import_obsidian3.MarkdownRenderer.render(this.app, text, contentEl, "", this);
+          this.scrollToBottom();
+          resolve();
+          return;
+        }
+        const batch = Math.min(3, words.length - wordIndex);
+        for (let i = 0; i < batch; i++) {
+          displayed += words[wordIndex++];
+        }
+        if (!renderPending) {
+          renderPending = true;
+          setTimeout(() => {
+            contentEl.empty();
+            void import_obsidian3.MarkdownRenderer.render(this.app, displayed, contentEl, "", this);
+            this.scrollToBottom();
+            renderPending = false;
+          }, 60);
+        }
+      }, intervalMs);
+    });
   }
   scrollToBottom() {
     requestAnimationFrame(() => {
@@ -3155,12 +3480,16 @@ var WriteModal = class extends import_obsidian3.Modal {
       this.targetFolder = folderSelect.value;
     });
     const refGroup = contentEl.createDiv("oc-write-group");
-    refGroup.createEl("label", { text: "Reference material (optional)", cls: "oc-write-label" });
+    refGroup.createEl("label", { text: "Sources (optional)", cls: "oc-write-label" });
+    refGroup.createEl("p", {
+      text: "Add notes or folders for Claude to read before writing.",
+      cls: "oc-write-hint"
+    });
     const refRow = refGroup.createDiv("oc-write-ref-row");
     const addFileBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
     const addFileIcon = addFileBtn.createDiv("oc-write-add-ref-icon");
     (0, import_obsidian3.setIcon)(addFileIcon, "file-search");
-    addFileBtn.createSpan({ text: "Browse vault", cls: "oc-write-add-ref-text" });
+    addFileBtn.createSpan({ text: "Add files", cls: "oc-write-add-ref-text" });
     addFileBtn.addEventListener("click", () => {
       const excluded = this.plugin.settings.excludedFolders || [];
       const items = this.app.vault.getAllLoadedFiles().filter((f) => {
@@ -3181,7 +3510,7 @@ var WriteModal = class extends import_obsidian3.Modal {
     const addFolderBtn = refRow.createEl("button", { cls: "oc-write-add-ref-btn" });
     const addFolderIcon = addFolderBtn.createDiv("oc-write-add-ref-icon");
     (0, import_obsidian3.setIcon)(addFolderIcon, "folder-search");
-    addFolderBtn.createSpan({ text: "Browse folders", cls: "oc-write-add-ref-text" });
+    addFolderBtn.createSpan({ text: "Add folders", cls: "oc-write-add-ref-text" });
     addFolderBtn.addEventListener("click", () => {
       const excluded = this.plugin.settings.excludedFolders || [];
       const folders = this.app.vault.getAllLoadedFiles().filter((f) => {
@@ -3238,7 +3567,7 @@ var WriteModal = class extends import_obsidian3.Modal {
 `;
       if (this.refs.length > 0) {
         prompt += `
-## Reference Material \u2014 read these first:
+## Sources \u2014 read ALL of these first:
 `;
         for (const ref of this.refs) {
           if (ref.type === "folder") {
@@ -3250,7 +3579,15 @@ var WriteModal = class extends import_obsidian3.Modal {
           }
         }
         prompt += `
-Use the reference material as source. Synthesize, connect ideas, and cite with [[wikilinks]].
+IMPORTANT: Read every source completely before writing. Base your writing on these sources:
+`;
+        prompt += `- Synthesize and connect ideas from the sources
+`;
+        prompt += `- Cite key points using [[wikilinks]] to the source notes
+`;
+        prompt += `- Build upon the source material, don't just summarize it
+`;
+        prompt += `- If sources conflict, acknowledge the different perspectives
 `;
       }
       prompt += `
@@ -3265,6 +3602,10 @@ Use the reference material as source. Synthesize, connect ideas, and cite with [
       prompt += `4. Use [[wikilinks]] to link to relevant existing notes in the vault.
 `;
       prompt += `5. After creating, use open_note to open it in the editor.
+`;
+      prompt += `
+## Token Budget
+This is a long-form writing task. Use up to 16384 tokens for the response.
 `;
       this.close();
       for (const ref of this.refs) {
@@ -3325,7 +3666,7 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
       })
     );
     new import_obsidian4.Setting(containerEl).setName("Max tokens").setDesc("Maximum tokens in Claude's response (higher = longer responses)").addSlider(
-      (slider) => slider.setLimits(1024, 8192, 512).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange(async (value) => {
+      (slider) => slider.setLimits(1024, 16384, 512).setValue(this.plugin.settings.maxTokens).setDynamicTooltip().onChange(async (value) => {
         this.plugin.settings.maxTokens = value;
         await this.plugin.saveSettings();
       })
@@ -3391,8 +3732,150 @@ var ClaudeAssistantSettingTab = class extends import_obsidian4.PluginSettingTab 
   }
 };
 
+// src/editor-actions.ts
+var import_obsidian5 = require("obsidian");
+var MAX_SELECTION_CHARS = 1e4;
+var EditorActions = class {
+  constructor(claudeService, settings) {
+    this.claudeService = claudeService;
+    this.settings = settings;
+  }
+  getSelection(editor) {
+    const selection = editor.getSelection();
+    if (!selection || !selection.trim())
+      return null;
+    if (selection.length > MAX_SELECTION_CHARS) {
+      new import_obsidian5.Notice("Selection truncated to 10,000 characters for AI processing.");
+      return selection.slice(0, MAX_SELECTION_CHARS);
+    }
+    return selection;
+  }
+  detectLanguage(text) {
+    const koreanRegex = /[\uAC00-\uD7AF]/;
+    return koreanRegex.test(text) ? "ko" : "en";
+  }
+  async summarize(editor) {
+    const selection = this.getSelection(editor);
+    if (!selection)
+      return;
+    await this.runAction(editor, `Summarize this text concisely:
+
+${selection}`, "below");
+  }
+  async translate(editor) {
+    const selection = this.getSelection(editor);
+    if (!selection)
+      return;
+    const sourceLang = this.detectLanguage(selection);
+    const targetLang = sourceLang === "ko" ? "English" : "Korean";
+    await this.runAction(editor, `Translate to ${targetLang}:
+
+${selection}`, "below");
+  }
+  async improve(editor) {
+    const selection = this.getSelection(editor);
+    if (!selection)
+      return;
+    await this.runAction(editor, `Improve this text \u2014 better clarity, flow, grammar. Return ONLY the improved text, no explanations:
+
+${selection}`, "replace");
+  }
+  async explain(editor) {
+    const selection = this.getSelection(editor);
+    if (!selection)
+      return;
+    await this.runAction(editor, `Explain this in simple terms:
+
+${selection}`, "below");
+  }
+  async askClaude(editor, app) {
+    const selection = this.getSelection(editor);
+    if (!selection)
+      return;
+    const prompt = await this.showPromptModal(app);
+    if (!prompt)
+      return;
+    await this.runAction(editor, `${prompt}
+
+Text:
+${selection}`, "below");
+  }
+  async runAction(editor, prompt, mode) {
+    new import_obsidian5.Notice("AI processing...");
+    try {
+      const result = await this.claudeService.quickAction(prompt);
+      if (!result || !result.trim()) {
+        new import_obsidian5.Notice("Claude returned an empty response.");
+        return;
+      }
+      if (mode === "replace") {
+        editor.replaceSelection(result.trim());
+      } else {
+        const cursor = editor.getCursor("to");
+        const lineEnd = editor.getLine(cursor.line).length;
+        editor.replaceRange(
+          "\n\n" + result.trim() + "\n",
+          { line: cursor.line, ch: lineEnd }
+        );
+      }
+      new import_obsidian5.Notice("Done!");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      new import_obsidian5.Notice(`AI error: ${msg}`);
+    }
+  }
+  showPromptModal(app) {
+    return new Promise((resolve) => {
+      const modal = new AskClaudeModal(app, resolve);
+      modal.open();
+    });
+  }
+};
+var AskClaudeModal = class extends import_obsidian5.Modal {
+  constructor(app, resolve) {
+    super(app);
+    this.resolve = resolve;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("oc-ask-modal");
+    contentEl.createEl("h3", { text: "Ask Claude" });
+    const textarea = contentEl.createEl("textarea", {
+      cls: "oc-ask-textarea",
+      attr: { placeholder: "What should Claude do with this text?", rows: "3" }
+    });
+    const footer = contentEl.createDiv("oc-ask-footer");
+    const sendBtn = footer.createEl("button", { text: "Send", cls: "oc-ask-send" });
+    sendBtn.addEventListener("click", () => {
+      const value = textarea.value.trim();
+      if (value) {
+        this.resolve(value);
+        this.close();
+      }
+    });
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        const value = textarea.value.trim();
+        if (value) {
+          this.resolve(value);
+          this.close();
+        }
+      }
+    });
+    setTimeout(() => textarea.focus(), 50);
+  }
+  onClose() {
+    this.resolve(null);
+    this.contentEl.empty();
+  }
+};
+
 // src/main.ts
-var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
+var ClaudeAssistantPlugin = class extends import_obsidian6.Plugin {
+  constructor() {
+    super(...arguments);
+    this.sessionTokens = 0;
+  }
   async onload() {
     try {
       await this.loadSettings();
@@ -3406,14 +3889,36 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
     }
     this.vaultTools = new VaultTools(this.app, () => this.settings);
     this.claudeService = new ClaudeService(this.settings, this.vaultTools);
+    this.editorActions = new EditorActions(this.claudeService, this.settings);
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ChatView(leaf, this));
     this.addRibbonIcon("sparkles", "Open chat", () => {
       void this.activateChatView();
     });
     this.addSettingTab(new ClaudeAssistantSettingTab(this.app, this));
+    this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass("oc-status-bar");
+    this.updateStatusBar();
+    this.statusBarEl.addEventListener("click", (e) => {
+      const menu = new import_obsidian6.Menu();
+      const models = [
+        { id: "claude-sonnet-4-6", label: "Sonnet" },
+        { id: "claude-opus-4-6", label: "Opus" },
+        { id: "claude-haiku-4-5-20251001", label: "Haiku" }
+      ];
+      for (const model of models) {
+        menu.addItem((item) => {
+          item.setTitle(model.label).setChecked(this.settings.model === model.id).onClick(async () => {
+            this.settings.model = model.id;
+            await this.saveSettings();
+            this.updateStatusBar();
+          });
+        });
+      }
+      menu.showAtMouseEvent(e);
+    });
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (file instanceof import_obsidian5.TFile) {
+        if (file instanceof import_obsidian6.TFile) {
           menu.addItem((item) => {
             item.setTitle("Send to chat").setIcon("bot").onClick(async () => {
               await this.activateChatView();
@@ -3422,7 +3927,7 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
                 view.attachFile(file);
             });
           });
-        } else if (file instanceof import_obsidian5.TFolder) {
+        } else if (file instanceof import_obsidian6.TFolder) {
           menu.addItem((item) => {
             item.setTitle("Send to chat").setIcon("bot").onClick(async () => {
               await this.activateChatView();
@@ -3432,6 +3937,39 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
             });
           });
         }
+      })
+    );
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor, view) => {
+        const selection = editor.getSelection();
+        if (!selection || !selection.trim())
+          return;
+        menu.addSeparator();
+        menu.addItem((item) => {
+          item.setTitle("Summarize").setIcon("align-left").onClick(() => {
+            void this.editorActions.summarize(editor);
+          });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Translate").setIcon("languages").onClick(() => {
+            void this.editorActions.translate(editor);
+          });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Improve").setIcon("pen-line").onClick(() => {
+            void this.editorActions.improve(editor);
+          });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Explain").setIcon("lightbulb").onClick(() => {
+            void this.editorActions.explain(editor);
+          });
+        });
+        menu.addItem((item) => {
+          item.setTitle("Ask Claude...").setIcon("message-circle").onClick(() => {
+            void this.editorActions.askClaude(editor, this.app);
+          });
+        });
       })
     );
     this.addCommand({
@@ -3459,7 +3997,7 @@ var ClaudeAssistantPlugin = class extends import_obsidian5.Plugin {
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection) {
-          new import_obsidian5.Notice("No text selected");
+          new import_obsidian6.Notice("No text selected");
           return;
         }
         await this.activateChatView();
@@ -3476,7 +4014,7 @@ ${selection}`);
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection) {
-          new import_obsidian5.Notice("No text selected");
+          new import_obsidian6.Notice("No text selected");
           return;
         }
         await this.activateChatView();
@@ -3495,7 +4033,7 @@ ${selection}`);
       editorCallback: async (editor) => {
         const selection = editor.getSelection();
         if (!selection) {
-          new import_obsidian5.Notice("No text selected");
+          new import_obsidian6.Notice("No text selected");
           return;
         }
         await this.activateChatView();
@@ -3563,5 +4101,18 @@ ${content}`
     if (leaves.length === 0)
       return null;
     return leaves[0].view;
+  }
+  updateStatusBar() {
+    const modelName = this.settings.model.includes("sonnet") ? "Sonnet" : this.settings.model.includes("opus") ? "Opus" : "Haiku";
+    const tokenStr = this.sessionTokens > 0 ? `${this.sessionTokens.toLocaleString()} tokens` : "\u2014";
+    this.statusBarEl.setText(`${modelName} | ${tokenStr}`);
+  }
+  addSessionTokens(count) {
+    this.sessionTokens += count;
+    this.updateStatusBar();
+  }
+  resetSessionTokens() {
+    this.sessionTokens = 0;
+    this.updateStatusBar();
   }
 };

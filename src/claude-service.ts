@@ -28,6 +28,8 @@ export interface ChatCallbacks {
   onToolStart?: (toolName: string) => void;
   onToolEnd?: (toolCall: ToolCallInfo) => void;
   signal?: AbortSignal;
+  maxTokensOverride?: number;  // For Magic Write (16384)
+  timeoutMs?: number;          // Custom timeout (default 180000)
 }
 
 export class ClaudeService {
@@ -56,7 +58,37 @@ export class ClaudeService {
 - Be proactive: if you notice something can be improved (orphan notes, missing tags), suggest it.
 - You can read the active note context to understand what the user is working on.
 
-## Frontmatter Template
+## Frontmatter Rules (ALWAYS APPLY — even when user doesn't mention it)
+Every note you create or edit MUST have complete, well-structured YAML frontmatter. This applies to ALL operations: creating notes, rewriting notes, translating notes, Magic Write, or any content generation. The user should NEVER have to ask for frontmatter — it is always included automatically.
+
+### Required fields (always include):
+- title: Note title (string)
+- date: Creation or publication date (ISO 8601: YYYY-MM-DD)
+- tags: Relevant categorization tags (YAML list format, 3-8 tags)
+  tags:
+    - tag1
+    - tag2
+- description: One-line summary of the note content
+- status: draft | published | review | archived
+
+### Recommended fields (include when applicable):
+- created: Creation date if different from date (ISO 8601: YYYY-MM-DD)
+- author: Author name (for articles, clippings, external content)
+- source: URL or origin (for clippings, references, external content)
+- aliases: Alternative names for the note (YAML list)
+- category: Content category (e.g., "개발도구", "프로젝트", "학습")
+- type: Note type (e.g., "블로그 아티클", "회의록", "리서치", "클리핑")
+- cssclasses: Custom CSS classes (YAML list, only if needed)
+
+### Strict rules:
+- NEVER set any field to null — omit the field entirely if no value
+- Use PLURAL forms: "tags" not "tag", "aliases" not "alias"
+- Dates MUST be ISO 8601: YYYY-MM-DD
+- Tags must be YAML list (not comma-separated string, not inline array)
+- Do NOT invent non-standard fields (no "license", "language", "related", "mood", "inspiration") unless user explicitly requests them
+- When rewriting or translating a note to another language: TRANSLATE the title, description, tags, category, and type fields to the target language. Keep date, author, source fields as-is. The title MUST be translated — never leave it in the original language when the user asks for translation or rewriting in a different language
+
+## User's Frontmatter Template (merge with above)
 ${JSON.stringify(this.settings.frontmatterTemplate, null, 2)}
 
 ## Excluded Folders (do not modify files in these)
@@ -74,7 +106,7 @@ ${this.settings.excludedFolders.join(", ")}`;
   async chat(
     conversationMessages: ClaudeMessage[],
     callbacks?: ChatCallbacks
-  ): Promise<{ text: string; toolCalls: ToolCallInfo[] }> {
+  ): Promise<{ text: string; toolCalls: ToolCallInfo[]; totalUsage: { input_tokens: number; output_tokens: number } }> {
     if (!this.settings.apiKey) {
       throw new Error(
         "API key not configured. Go to Settings → OBSICLAUDE to set your API key."
@@ -84,9 +116,12 @@ ${this.settings.excludedFolders.join(", ")}`;
     const tools = this.vaultTools.getToolDefinitions();
     // Trim conversation to fit token limits
     const messages = this.trimMessages(conversationMessages);
+    const maxTokens = callbacks?.maxTokensOverride || this.settings.maxTokens;
     const allToolCalls: ToolCallInfo[] = [];
     let fullText = "";
     let iterations = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
@@ -97,7 +132,10 @@ ${this.settings.excludedFolders.join(", ")}`;
         break;
       }
 
-      const response = await this.callAPI(messages, tools);
+      let response = await this.callAPI(messages, tools, maxTokens, callbacks?.timeoutMs);
+      totalInputTokens += response.usage?.input_tokens || 0;
+      totalOutputTokens += response.usage?.output_tokens || 0;
+
       const textBlocks = response.content
         .filter((b): b is ClaudeTextBlock => b.type === "text")
         .map((b) => b.text);
@@ -105,6 +143,43 @@ ${this.settings.excludedFolders.join(", ")}`;
       if (iterText) {
         fullText += iterText;
         callbacks?.onText?.(fullText);
+      }
+
+      // Auto-continue if response was truncated
+      if (response.stop_reason === "max_tokens") {
+        let continuations = 0;
+        while (response.stop_reason === "max_tokens" && continuations < 3) {
+          continuations++;
+          console.debug(`OBSICLAUDE: auto-continue ${continuations}/3`);
+          callbacks?.onText?.(fullText + "\n\n*(continuing...)*");
+
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content: "Continue writing from exactly where you stopped. Do not repeat any content.",
+          });
+
+          response = await this.callAPI(messages, tools, maxTokens, callbacks?.timeoutMs);
+          totalInputTokens += response.usage?.input_tokens || 0;
+          totalOutputTokens += response.usage?.output_tokens || 0;
+
+          const contText = response.content
+            .filter((b): b is ClaudeTextBlock => b.type === "text")
+            .map((b) => b.text)
+            .join("\n");
+          if (contText) {
+            fullText += contText;
+            callbacks?.onText?.(fullText);
+          }
+        }
+
+        if (response.stop_reason === "max_tokens") {
+          fullText += "\n\n> Response was very long and may be incomplete. Try breaking into smaller requests.";
+        }
+
+        if (response.stop_reason !== "tool_use") {
+          break;
+        }
       }
 
       // Done if no tool calls
@@ -163,7 +238,11 @@ ${this.settings.excludedFolders.join(", ")}`;
       fullText += "\n\n> Maximum tool iterations reached. Some tasks may be incomplete.";
     }
 
-    return { text: fullText, toolCalls: allToolCalls };
+    return {
+      text: fullText,
+      toolCalls: allToolCalls,
+      totalUsage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+    };
   }
 
   /**
@@ -171,37 +250,56 @@ ${this.settings.excludedFolders.join(", ")}`;
    */
   private async callAPI(
     messages: ClaudeMessage[],
-    tools: ClaudeTool[]
+    tools: ClaudeTool[],
+    maxTokens?: number,
+    timeoutMs?: number
   ): Promise<ClaudeResponse> {
     const body: ClaudeRequest = {
       model: this.settings.model,
-      max_tokens: this.settings.maxTokens,
+      max_tokens: maxTokens || this.settings.maxTokens,
       system: this.buildSystemPrompt(),
       messages,
       tools,
     };
 
-    const response = await requestUrl({
-      url: CLAUDE_API_URL,
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.settings.apiKey,
-        "anthropic-version": API_VERSION,
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-      throw: false,
-    });
+    const DEFAULT_TIMEOUT = 180_000; // 3 minutes
+    const timeout = timeoutMs || DEFAULT_TIMEOUT;
 
+    const response = await Promise.race([
+      requestUrl({
+        url: CLAUDE_API_URL,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.settings.apiKey,
+          "anthropic-version": API_VERSION,
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify(body),
+        throw: false,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Request timed out — the response took too long. Try a simpler request or increase timeout.")), timeout)
+      ),
+    ]);
+
+    if (response.status === 429) {
+      throw new Error("Rate limited — please wait a moment and try again.");
+    }
+    if (response.status === 529) {
+      throw new Error("Claude is busy — please try again in a moment.");
+    }
     if (response.status !== 200) {
       const errorBody = response.json;
       const errorMsg =
         errorBody?.error?.message || `API error: ${response.status}`;
+      console.error("OBSICLAUDE API error:", response.status, errorBody);
       throw new Error(errorMsg);
     }
 
-    return response.json as ClaudeResponse;
+    const parsed = response.json as ClaudeResponse;
+    console.debug("OBSICLAUDE API response:", parsed.stop_reason, "blocks:", parsed.content?.length, "usage:", parsed.usage);
+    return parsed;
   }
 
   /**
