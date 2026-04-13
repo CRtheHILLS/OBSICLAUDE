@@ -64,10 +64,13 @@ Every note you create or edit MUST have complete, well-structured YAML frontmatt
 ### Required fields (always include):
 - title: Note title (string)
 - date: Creation or publication date (ISO 8601: YYYY-MM-DD)
-- tags: Relevant categorization tags (YAML list format, 3-8 tags)
-  tags:
-    - tag1
-    - tag2
+- tags: Rich, specific tags (YAML list format, 5-12 tags). Tags MUST include:
+  1. Person names mentioned (e.g., "Andrej Karpathy", "Paul Graham") — always in original language
+  2. Product/tool/service names (e.g., "Claude Code", "Obsidian", "React")
+  3. Company/organization names (e.g., "Anthropic", "OpenAI")
+  4. Topic/theme tags in the note's language
+  5. Category tags (e.g., "AI", "development", "tutorial")
+  Never generate vague tags like "guide" or "tips" alone — be specific.
 - description: One-line summary of the note content
 - status: draft | published | review | archived
 
@@ -262,7 +265,7 @@ ${this.settings.excludedFolders.join(", ")}`;
       tools,
     };
 
-    const DEFAULT_TIMEOUT = 180_000; // 3 minutes
+    const DEFAULT_TIMEOUT = 600_000; // 10 minutes — long content generation needs time
     const timeout = timeoutMs || DEFAULT_TIMEOUT;
 
     const response = await Promise.race([
@@ -279,7 +282,7 @@ ${this.settings.excludedFolders.join(", ")}`;
         throw: false,
       }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out — the response took too long. Try a simpler request or increase timeout.")), timeout)
+        setTimeout(() => reject(new Error("Request timed out. Try again or use a shorter text.")), timeout)
       ),
     ]);
 

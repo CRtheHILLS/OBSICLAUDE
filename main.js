@@ -1075,10 +1075,13 @@ Every note you create or edit MUST have complete, well-structured YAML frontmatt
 ### Required fields (always include):
 - title: Note title (string)
 - date: Creation or publication date (ISO 8601: YYYY-MM-DD)
-- tags: Relevant categorization tags (YAML list format, 3-8 tags)
-  tags:
-    - tag1
-    - tag2
+- tags: Rich, specific tags (YAML list format, 5-12 tags). Tags MUST include:
+  1. Person names mentioned (e.g., "Andrej Karpathy", "Paul Graham") \u2014 always in original language
+  2. Product/tool/service names (e.g., "Claude Code", "Obsidian", "React")
+  3. Company/organization names (e.g., "Anthropic", "OpenAI")
+  4. Topic/theme tags in the note's language
+  5. Category tags (e.g., "AI", "development", "tutorial")
+  Never generate vague tags like "guide" or "tips" alone \u2014 be specific.
 - description: One-line summary of the note content
 - status: draft | published | review | archived
 
@@ -1227,7 +1230,7 @@ ${this.settings.excludedFolders.join(", ")}`;
       messages,
       tools
     };
-    const DEFAULT_TIMEOUT = 18e4;
+    const DEFAULT_TIMEOUT = 6e5;
     const timeout = timeoutMs || DEFAULT_TIMEOUT;
     const response = await Promise.race([
       (0, import_obsidian2.requestUrl)({
@@ -1243,7 +1246,7 @@ ${this.settings.excludedFolders.join(", ")}`;
         throw: false
       }),
       new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("Request timed out \u2014 the response took too long. Try a simpler request or increase timeout.")), timeout)
+        (_, reject) => setTimeout(() => reject(new Error("Request timed out. Try again or use a shorter text.")), timeout)
       )
     ]);
     if (response.status === 429) {
